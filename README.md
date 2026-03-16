@@ -6,6 +6,10 @@
 Demo：[http://nce.ichochy.com](http://nce.ichochy.com)  
 
 --- 
+## 截图
+![pc.jpg](https://image.ichochy.com/Blog/pc.jpg)
+
+![mobile.jpg](https://image.ichochy.com/Blog/mobile.jpg)
 
 ## 信息
 Blog：[http://ichochy.com](http://ichochy.com)   
@@ -19,6 +23,20 @@ GitHub：[https://github.com/ichochy/nce](https://github.com/ichochy/nce)
 音频为美音，中文字幕为 [Gemini AI](https://aistudio.google.com) 生成。没有**一一核对**，会有一些错误和不足，欢迎大家指正和完善。
 
 自己还特意写了一个Python脚本（[iGSTT](https://ichochy.com/posts/shell/20251015.html)）实现中文翻译
+
+---
+
+## 版权声明
+本网站的内容仅限个人学习、研究或欣赏之用，非商业用途。
+
+内容源于互联网，我们不对内容的版权归属承担任何责任。  
+如您认为本网站上的任何内容侵犯了您的著作权或其他合法权益，请通过以下联系方式通知我们。    
+联系邮箱：me@ichochy.com。   
+我们将在收到有效通知后尽快核实并采取相应措施（如删除相关内容）。
+
+为尊重和保护著作权人的合法权益，请您支持正版，购买合法授权的教材或资源，避免使用未经授权的内容。
+
+本声明适用于本网站的所有内容，感谢您的理解与配合。
 
 ---
 
@@ -125,20 +143,6 @@ GitHub：[https://github.com/ichochy/nce](https://github.com/ichochy/nce)
 
 ---
 
-## 版权声明
-本网站的内容仅限个人学习、研究或欣赏之用，非商业用途。
-
-内容源于互联网，我们不对内容的版权归属承担任何责任。  
-如您认为本网站上的任何内容侵犯了您的著作权或其他合法权益，请通过以下联系方式通知我们。    
-联系邮箱：me@ichochy.com。   
-我们将在收到有效通知后尽快核实并采取相应措施（如删除相关内容）。  
-
-为尊重和保护著作权人的合法权益，请您支持正版，购买合法授权的教材或资源，避免使用未经授权的内容。  
-
-本声明适用于本网站的所有内容，感谢您的理解与配合。
-
----
-
 ## 最后
 1. Keep learning — progress comes with persistence.（坚持学习，每一天都有进步。）
 2. Every new word brings you closer to the world.（每个新单词都是向世界迈进一步。）
@@ -150,3 +154,9 @@ GitHub：[https://github.com/ichochy/nce](https://github.com/ichochy/nce)
 8. Your effort will make English speak for you.（你的努力，会让英语为你发声。）
 9. Learning English is not a task but a journey of discovery.（学习英语不是任务，而是探索世界的旅程。）
 10. Be brave — speak out; you’re better than you think.（坚定一点，说出口，你比想象中更好。）
+
+## 打赏
+80后码农×白血病（CMML）患者，工作已停，药费没停。  
+如果我写的东西对您有用，求打赏点生命值。  
+
+![sponsor.jpg](https://image.ichochy.com/sponsor.jpg)

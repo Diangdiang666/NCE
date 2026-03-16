@@ -1,0 +1,869 @@
+// Author: Qim
+// Blog: https://ichochy.com
+// Email: Qim.it@icloud.com
+// FileName: iReader:main.js
+// Update: 2025/12/5 19:41
+// Copyright (c) 2025.
+
+const DEFAULT_BOOK_KEY = 'NCE1';
+
+const qs = (selector, root = document) => root.querySelector(selector);
+const qsa = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+// LRC 解析器
+class LRCParser {
+  static parse(lrcText) {
+    const lines = lrcText.split('\n');
+    const lyrics = [];
+
+    for (const line of lines) {
+      const match = line.match(/\[(\d{2}):(\d{2})\.(\d{2,3})\](.+)/);
+      if (match) {
+        const minutes = parseInt(match[1]);
+        const seconds = parseInt(match[2]);
+        const milliseconds = parseInt(match[3]);
+        const time = minutes * 60 + seconds + milliseconds / 1000 - 0.5;
+
+        // 分割英文和中文（使用 | 分隔符）
+        const text = match[4].trim();
+        const parts = text.split('|').map((p) => p.trim());
+
+        lyrics.push({
+          time,
+          english: parts[0] || '',
+          chinese: parts[1] || '',
+          fullText: text
+        });
+      }
+    }
+
+    return lyrics.sort((a, b) => a.time - b.time);
+  }
+}
+
+class ReadingSystem {
+  constructor() {
+    this.state = {
+      books: [],
+      units: [],
+      bookPath: '',
+      bookKey: '',
+      currentLyrics: [],
+      currentLyricIndex: -1,
+      currentUnitIndex: -1,
+      playMode: 'single',
+      singlePlayEndTime: null,
+      playbackRate: 1.0,
+      showTranslation: true,
+      availableSpeeds: [0.5, 0.75, 1.0, 1.25, 1.5, 2.0],
+      savedPlayTime: 0,
+      isProgressDragging: false
+    };
+
+    this.dom = {
+      audioPlayer: qs('#audioPlayer'),
+      lyricsDisplay: qs('#lyricsDisplay'),
+      lyricsContainer: qs('.lyrics-container'),
+      bookName: qs('#bookName'),
+      bookLevel: qs('#bookLevel'),
+      unitList: qs('#unitListContainer'),
+      playModeBtn: qs('#playModeBtn'),
+      playPauseBtn: qs('#playPauseBtn'),
+      progressBar: qs('#progressBar'),
+      progressFill: qs('#progressFill'),
+      progressHandle: qs('#progressHandle'),
+      currentTime: qs('#currentTime'),
+      duration: qs('#duration'),
+      speedBtn: qs('#speedBtn'),
+      speedText: qs('#speedText'),
+      bookCover: qs('#bookCover'),
+      unitSelect: qs('#unitSelect'),
+      bookSelects: qsa('.book-select'),
+      prevUnitBtn: qs('#prevUnitBtn'),
+      nextUnitBtn: qs('#nextUnitBtn'),
+      toggleTranslationBtn: qs('#toggleTranslationBtn')
+    };
+
+    this.lyricLineEls = [];
+    this.unitSelectBound = false;
+    this.unitListBound = false;
+    this.bookSelectsBound = false;
+    this.lyricsBound = false;
+    this.lrcCache = new Map();
+    this.audioPreload = new Map();
+
+    this.init();
+  }
+
+  async init() {
+    await this.loadBooks();
+    await this.applyBookFromHash();
+    this.bindEvents();
+    this.updatePlayModeUI();
+    this.loadTranslationPreference();
+    this.updateTranslationToggle();
+    await this.loadUnitFromStorage();
+  }
+
+  async loadBooks() {
+    if (this.state.books.length) return this.state.books;
+    try {
+      const response = await fetch('data.json');
+      const data = await response.json();
+      this.state.books = Array.isArray(data.books) ? data.books : [];
+    } catch (error) {
+      console.error('加载课本数据失败:', error);
+      this.state.books = [];
+    }
+    return this.state.books;
+  }
+
+  resolveBookByKey(bookKey) {
+    if (!this.state.books.length) return null;
+    const exact = this.state.books.find((book) => book && book.key === bookKey);
+    if (exact && exact.bookPath) return exact;
+    const fallback = this.state.books.find((book) => book && book.key === DEFAULT_BOOK_KEY);
+    if (fallback && fallback.bookPath) return fallback;
+    return this.state.books.find((book) => book && book.bookPath) || null;
+  }
+
+  async applyBookFromHash() {
+    const keyFromHash = location.hash.slice(1).trim() || DEFAULT_BOOK_KEY;
+    await this.applyBookChange(keyFromHash);
+  }
+
+  async applyBookChange(bookKey) {
+    await this.loadBooks();
+    const resolved = this.resolveBookByKey(bookKey);
+
+    if (!resolved || !resolved.bookPath) {
+      this.state.bookPath = '';
+      this.state.bookKey = '';
+      this.renderEmptyState('未找到可用课本数据');
+      return;
+    }
+
+    this.state.bookKey = resolved.key || bookKey;
+    this.state.bookPath = resolved.bookPath.trim();
+
+    this.updateBookSelects();
+    await this.loadBookConfig();
+    this.renderUnitList();
+    this.renderUnitSelect();
+  }
+
+  renderEmptyState(message) {
+    if (this.dom.lyricsDisplay) {
+      this.dom.lyricsDisplay.innerHTML = `<p class="placeholder">${message}</p>`;
+    }
+    if (this.dom.unitList) {
+      this.dom.unitList.innerHTML = '';
+    }
+  }
+
+  async loadBookConfig() {
+    if (!this.state.bookPath) {
+      this.renderEmptyState('未找到可用课本数据');
+      return;
+    }
+
+    try {
+      const response = await fetch(`${this.state.bookPath}/book.json`);
+      const data = await response.json();
+
+      this.state.units = data.units.map((unit, index) => ({
+        ...unit,
+        id: index + 1,
+        title: unit.title,
+        audio: `${this.state.bookPath}/${unit.filename}.mp3`,
+        lrc: `${this.state.bookPath}/${unit.filename}.lrc`
+      }));
+
+      if (this.dom.bookName) {
+        this.dom.bookName.textContent = `《${data.bookName}》`;
+      }
+      if (this.dom.bookLevel) {
+        this.dom.bookLevel.textContent = `${data.bookLevel}`;
+      }
+      if (this.dom.bookCover && data.bookCover) {
+        this.dom.bookCover.src = `${this.state.bookPath}/${data.bookCover}`;
+      }
+      this.lrcCache.clear();
+      this.audioPreload.clear();
+    } catch (error) {
+      console.error('加载课件配置失败:', error);
+      this.renderEmptyState(`课件配置加载失败，请检查 ${this.state.bookPath}/book.json 文件`);
+    }
+  }
+
+  updateBookSelects() {
+    if (!this.dom.bookSelects.length || !this.state.books.length) return;
+
+    const options = this.state.books
+      .filter((book) => book && book.key && book.title && book.bookPath)
+      .map((book) => `<option value="${book.key}">${book.title}</option>`)
+      .join('');
+
+    this.dom.bookSelects.forEach((select) => {
+      select.innerHTML = `<option value="">选择课本</option>${options}`;
+      if (this.state.bookKey) {
+        select.value = this.state.bookKey;
+      }
+    });
+  }
+
+  renderUnitList() {
+    if (!this.dom.unitList) return;
+
+    this.dom.unitList.innerHTML = this.state.units
+      .map(
+        (unit, index) => `
+      <div class="unit-item" data-unit-index="${index}" tabindex="0" role="button" aria-label="打开 ${unit.title}">
+        <h3>${unit.title}</h3>
+      </div>
+    `
+      )
+      .join('');
+  }
+
+  renderUnitSelect() {
+    if (!this.dom.unitSelect) return;
+
+    const options = this.state.units
+      .map((unit, index) => `<option value="${index}">${unit.title}</option>`)
+      .join('');
+
+    this.dom.unitSelect.innerHTML = `<option value="">选择 Unit</option>${options}`;
+  }
+
+  async loadUnitFromStorage() {
+    if (!this.state.units.length) return;
+
+    const stored = localStorage.getItem(`${this.state.bookPath}/currentUnitIndex`);
+    const parsed = stored ? parseInt(stored) : 0;
+    const safeIndex = Number.isFinite(parsed)
+      ? clamp(parsed, 0, this.state.units.length - 1)
+      : 0;
+
+    await this.loadUnitByIndex(safeIndex);
+  }
+
+  async loadUnitByIndex(unitIndex) {
+    this.state.currentUnitIndex = unitIndex;
+    localStorage.setItem(`${this.state.bookPath}/currentUnitIndex`, unitIndex);
+
+    const unit = this.state.units[unitIndex];
+    if (!unit) return;
+
+    this.resetPlayer();
+    this.updateActiveUnit(unitIndex);
+    this.updateNavigationButtons();
+
+    try {
+      let lrcText = this.lrcCache.get(unit.lrc);
+      if (!lrcText) {
+        const response = await fetch(unit.lrc);
+        lrcText = await response.text();
+        this.lrcCache.set(unit.lrc, lrcText);
+      }
+      this.state.currentLyrics = LRCParser.parse(lrcText);
+      this.renderLyrics();
+    } catch (error) {
+      console.error('加载歌词失败:', error);
+      if (this.dom.lyricsDisplay) {
+        this.dom.lyricsDisplay.innerHTML = '<p class="placeholder">加载失败</p>';
+      }
+    }
+
+    if (this.dom.audioPlayer) {
+      this.dom.audioPlayer.src = unit.audio;
+      this.dom.audioPlayer.load();
+    }
+
+    this.loadPlayTime();
+    this.loadSavedSpeed();
+    this.prefetchUnit(unitIndex + 1);
+  }
+
+  resetPlayer() {
+    if (this.dom.audioPlayer) {
+      this.dom.audioPlayer.pause();
+      this.dom.audioPlayer.currentTime = 0;
+    }
+
+    if (this.dom.progressFill) this.dom.progressFill.style.width = '0%';
+    if (this.dom.progressHandle) this.dom.progressHandle.style.left = '0%';
+    if (this.dom.currentTime) this.dom.currentTime.textContent = '0:00';
+    if (this.dom.duration) this.dom.duration.textContent = '0:00';
+
+    this.updatePlayButton();
+    this.state.currentLyricIndex = -1;
+    this.state.singlePlayEndTime = null;
+  }
+
+  updateActiveUnit(unitIndex) {
+    if (this.dom.unitList) {
+      this.dom.unitList.querySelectorAll('.unit-item').forEach((item, index) => {
+        if (index === unitIndex) {
+          item.classList.add('active');
+        } else {
+          item.classList.remove('active');
+        }
+      });
+    }
+
+    if (this.dom.unitSelect) {
+      this.dom.unitSelect.value = unitIndex;
+    }
+  }
+
+  renderLyrics() {
+    if (!this.dom.lyricsDisplay) return;
+
+    if (!this.state.currentLyrics.length) {
+      this.dom.lyricsDisplay.innerHTML = '<p class="placeholder">没有歌词数据</p>';
+      return;
+    }
+
+    this.dom.lyricsDisplay.innerHTML = this.state.currentLyrics
+      .map(
+        (lyric, index) => `
+      <div class="lyric-line" data-index="${index}" data-time="${lyric.time}" tabindex="0" role="button" aria-label="播放第 ${index + 1} 句">
+        <div class="lyric-text">${lyric.english}</div>
+        ${lyric.chinese ? `<div class="lyric-translation">${lyric.chinese}</div>` : ''}
+      </div>
+    `
+      )
+      .join('');
+
+    this.lyricLineEls = qsa('.lyric-line', this.dom.lyricsDisplay);
+    this.state.currentLyricIndex = -1;
+  }
+
+  handleLyricActivate(line) {
+    const index = parseInt(line.dataset.index);
+    const time = parseFloat(line.dataset.time);
+    this.playLyricAtIndex(index, time);
+    this.persistPlayTime(time);
+  }
+
+  playLyricAtIndex(index, time) {
+    if (!this.dom.audioPlayer) return;
+
+    this.dom.audioPlayer.currentTime = time;
+
+    if (this.state.playMode === 'single') {
+      const nextLyric = this.state.currentLyrics[index + 1];
+      this.state.singlePlayEndTime = nextLyric ? nextLyric.time : this.dom.audioPlayer.duration;
+    } else {
+      this.state.singlePlayEndTime = null;
+    }
+
+    this.dom.audioPlayer.play();
+  }
+
+  persistPlayTime(time) {
+    localStorage.setItem(`${this.state.bookPath}/${this.state.currentUnitIndex}/playTime`, time);
+  }
+
+  checkSinglePlayEnd() {
+    if (this.state.playMode !== 'single' || this.state.singlePlayEndTime === null || !this.dom.audioPlayer) {
+      return;
+    }
+
+    const currentTime = this.dom.audioPlayer.currentTime;
+    if (currentTime >= this.state.singlePlayEndTime && this.state.singlePlayEndTime !== this.dom.audioPlayer.duration) {
+      this.dom.audioPlayer.pause();
+      this.dom.audioPlayer.currentTime = this.state.singlePlayEndTime - 0.01;
+      this.state.singlePlayEndTime = null;
+    }
+  }
+
+  updateProgress() {
+    if (!this.dom.progressFill || !this.dom.progressHandle || !this.dom.currentTime || !this.dom.audioPlayer) return;
+
+    if (this.dom.audioPlayer.duration && !this.state.isProgressDragging) {
+      const percent = (this.dom.audioPlayer.currentTime / this.dom.audioPlayer.duration) * 100;
+      this.dom.progressFill.style.width = `${percent}%`;
+      this.dom.progressHandle.style.left = `${percent}%`;
+      this.dom.currentTime.textContent = this.formatTime(this.dom.audioPlayer.currentTime);
+    }
+  }
+
+  updateDuration() {
+    if (!this.dom.duration || !this.dom.audioPlayer) return;
+
+    this.dom.duration.textContent = this.formatTime(this.dom.audioPlayer.duration);
+    if (this.state.savedPlayTime > 0 && this.dom.audioPlayer.duration) {
+      this.dom.audioPlayer.currentTime = Math.min(this.state.savedPlayTime, this.dom.audioPlayer.duration - 0.1);
+      this.state.savedPlayTime = 0;
+      this.updateProgress();
+    }
+  }
+
+  updatePlayButton() {
+    if (!this.dom.playPauseBtn || !this.dom.audioPlayer) return;
+
+    if (this.dom.audioPlayer.paused) {
+      this.dom.playPauseBtn.classList.remove('playing');
+    } else {
+      this.dom.playPauseBtn.classList.add('playing');
+    }
+  }
+
+  formatTime(seconds) {
+    if (isNaN(seconds)) return '0:00';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  cyclePlaybackSpeed() {
+    const currentIndex = this.state.availableSpeeds.indexOf(this.state.playbackRate);
+    const nextIndex = (currentIndex + 1) % this.state.availableSpeeds.length;
+    this.state.playbackRate = this.state.availableSpeeds[nextIndex];
+
+    if (this.dom.audioPlayer) {
+      this.dom.audioPlayer.playbackRate = this.state.playbackRate;
+    }
+
+    this.updateSpeedButton();
+    localStorage.setItem('playbackRate', this.state.playbackRate);
+  }
+
+  updateSpeedButton() {
+    if (!this.dom.speedText || !this.dom.speedBtn) return;
+
+    this.dom.speedText.textContent = `${this.state.playbackRate}x`;
+
+    if (this.state.playbackRate !== 1.0) {
+      this.dom.speedBtn.classList.add('active');
+    } else {
+      this.dom.speedBtn.classList.remove('active');
+    }
+  }
+
+  loadPlayTime() {
+    const time = localStorage.getItem(`${this.state.bookPath}/${this.state.currentUnitIndex}/playTime`);
+    if (time) {
+      const parsed = parseFloat(time);
+      if (Number.isFinite(parsed)) {
+        this.state.savedPlayTime = parsed;
+      }
+    }
+  }
+
+  loadSavedSpeed() {
+    const savedSpeed = localStorage.getItem('playbackRate');
+    if (savedSpeed) {
+      const parsed = parseFloat(savedSpeed);
+      if (!Number.isFinite(parsed)) return;
+      this.state.playbackRate = parsed;
+      if (this.dom.audioPlayer) {
+        this.dom.audioPlayer.playbackRate = this.state.playbackRate;
+      }
+      this.updateSpeedButton();
+    }
+  }
+
+  updateNavigationButtons() {
+    if (this.dom.prevUnitBtn) {
+      this.dom.prevUnitBtn.disabled = this.state.currentUnitIndex <= 0;
+    }
+
+    if (this.dom.nextUnitBtn) {
+      this.dom.nextUnitBtn.disabled = this.state.currentUnitIndex >= this.state.units.length - 1;
+    }
+  }
+
+  loadPreviousUnit() {
+    if (this.state.currentUnitIndex > 0) {
+      this.loadUnitByIndex(this.state.currentUnitIndex - 1);
+    }
+  }
+
+  loadNextUnit() {
+    if (this.state.currentUnitIndex < this.state.units.length - 1) {
+      this.loadUnitByIndex(this.state.currentUnitIndex + 1);
+    }
+  }
+
+  togglePlayMode() {
+    this.state.playMode = this.state.playMode === 'single' ? 'continuous' : 'single';
+    this.updatePlayModeUI();
+  }
+
+  updatePlayModeUI() {
+    if (!this.dom.playModeBtn) return;
+
+    if (this.state.playMode === 'single') {
+      this.dom.playModeBtn.title = '单句点读';
+      this.dom.playModeBtn.classList.remove('continuous-mode');
+    } else {
+      this.dom.playModeBtn.title = '连续点读';
+      this.dom.playModeBtn.classList.add('continuous-mode');
+    }
+  }
+
+  handleAudioEnded() {
+    if (this.state.playMode === 'continuous') {
+      this.playNextLyric();
+    }
+  }
+
+  playNextLyric() {
+    const nextIndex = this.state.currentLyricIndex + 1;
+    if (nextIndex < this.state.currentLyrics.length && this.dom.audioPlayer) {
+      const nextLyric = this.state.currentLyrics[nextIndex];
+      this.dom.audioPlayer.currentTime = nextLyric.time;
+      this.dom.audioPlayer.play();
+    }
+  }
+
+  updateLyricHighlight() {
+    if (!this.lyricLineEls.length || !this.dom.audioPlayer) return;
+
+    const currentTime = this.dom.audioPlayer.currentTime;
+    let newIndex = -1;
+    for (let i = this.state.currentLyrics.length - 1; i >= 0; i--) {
+      if (currentTime >= this.state.currentLyrics[i].time) {
+        newIndex = i;
+        break;
+      }
+    }
+
+    if (newIndex === this.state.currentLyricIndex) return;
+
+    if (this.state.currentLyricIndex >= 0 && this.lyricLineEls[this.state.currentLyricIndex]) {
+      this.lyricLineEls[this.state.currentLyricIndex].classList.remove('active');
+      this.lyricLineEls[this.state.currentLyricIndex].classList.remove('pulse');
+    }
+
+    this.state.currentLyricIndex = newIndex;
+
+    if (newIndex >= 0) {
+      const activeLine = this.lyricLineEls[newIndex];
+      if (activeLine) {
+        activeLine.classList.add('active');
+        activeLine.classList.add('pulse');
+        if (this.shouldScrollLyricIntoView(activeLine)) {
+          activeLine.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }
+    }
+  }
+
+  prefetchUnit(unitIndex) {
+    const unit = this.state.units[unitIndex];
+    if (!unit) return;
+
+    if (unit.lrc && !this.lrcCache.has(unit.lrc)) {
+      fetch(unit.lrc)
+        .then((response) => response.text())
+        .then((text) => this.lrcCache.set(unit.lrc, text))
+        .catch(() => {});
+    }
+
+    if (unit.audio && !this.audioPreload.has(unit.audio)) {
+      const audio = new Audio();
+      audio.preload = 'auto';
+      audio.src = unit.audio;
+      this.audioPreload.set(unit.audio, audio);
+    }
+  }
+
+  shouldScrollLyricIntoView(activeLine) {
+    if (!this.dom.lyricsContainer) return true;
+    const containerRect = this.dom.lyricsContainer.getBoundingClientRect();
+    const lineRect = activeLine.getBoundingClientRect();
+    const topThreshold = containerRect.top + containerRect.height * 0.22;
+    const bottomThreshold = containerRect.bottom - containerRect.height * 0.22;
+    return lineRect.top < topThreshold || lineRect.bottom > bottomThreshold;
+  }
+
+  bindEvents() {
+    this.bindBookSelects();
+    this.bindUnitList();
+    this.bindUnitSelect();
+    this.bindLyrics();
+    this.bindPlayerControls();
+    this.bindNavigation();
+    this.bindTranslationToggle();
+
+    window.addEventListener('hashchange', () => {
+      const newKey = location.hash.slice(1).trim() || DEFAULT_BOOK_KEY;
+      if (newKey === this.state.bookKey) return;
+      this.applyBookChange(newKey).then(() => this.loadUnitFromStorage());
+    });
+  }
+
+  bindTranslationToggle() {
+    if (!this.dom.toggleTranslationBtn) return;
+    this.dom.toggleTranslationBtn.addEventListener('click', () => {
+      this.state.showTranslation = !this.state.showTranslation;
+      localStorage.setItem('showTranslation', this.state.showTranslation ? '1' : '0');
+      this.updateTranslationToggle();
+    });
+  }
+
+  loadTranslationPreference() {
+    const stored = localStorage.getItem('showTranslation');
+    if (stored === '0') {
+      this.state.showTranslation = false;
+    }
+  }
+
+  updateTranslationToggle() {
+    if (!this.dom.toggleTranslationBtn) return;
+    if (this.state.showTranslation) {
+      document.body.classList.remove('hide-translation');
+      this.dom.toggleTranslationBtn.textContent = '英';
+      this.dom.toggleTranslationBtn.setAttribute('aria-pressed', 'true');
+    } else {
+      document.body.classList.add('hide-translation');
+      this.dom.toggleTranslationBtn.textContent = '中';
+      this.dom.toggleTranslationBtn.setAttribute('aria-pressed', 'false');
+    }
+  }
+
+  bindBookSelects() {
+    if (this.bookSelectsBound || !this.dom.bookSelects.length) return;
+    this.bookSelectsBound = true;
+
+    this.dom.bookSelects.forEach((select) => {
+      select.addEventListener('change', (event) => {
+        const target = event.target;
+        if (!target.value) return;
+        if (location.hash.slice(1) === target.value) return;
+        location.hash = target.value;
+      });
+    });
+  }
+
+  bindUnitList() {
+    if (this.unitListBound || !this.dom.unitList) return;
+    this.unitListBound = true;
+
+    this.dom.unitList.addEventListener('click', (event) => {
+      const item = event.target.closest('.unit-item');
+      if (!item) return;
+      const unitIndex = parseInt(item.dataset.unitIndex);
+      this.loadUnitByIndex(unitIndex);
+    });
+
+    this.dom.unitList.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      const item = event.target.closest('.unit-item');
+      if (!item) return;
+      event.preventDefault();
+      const unitIndex = parseInt(item.dataset.unitIndex);
+      this.loadUnitByIndex(unitIndex);
+    });
+  }
+
+  bindUnitSelect() {
+    if (this.unitSelectBound || !this.dom.unitSelect) return;
+    this.unitSelectBound = true;
+
+    this.dom.unitSelect.addEventListener('change', (event) => {
+      const unitIndex = parseInt(event.target.value);
+      if (unitIndex >= 0) {
+        this.loadUnitByIndex(unitIndex);
+      }
+    });
+  }
+
+  bindLyrics() {
+    if (this.lyricsBound || !this.dom.lyricsDisplay) return;
+    this.lyricsBound = true;
+
+    this.dom.lyricsDisplay.addEventListener('click', (event) => {
+      const line = event.target.closest('.lyric-line');
+      if (!line) return;
+      this.handleLyricActivate(line);
+    });
+
+    this.dom.lyricsDisplay.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      const line = event.target.closest('.lyric-line');
+      if (!line) return;
+      event.preventDefault();
+      this.handleLyricActivate(line);
+    });
+  }
+
+  bindPlayerControls() {
+    if (
+      !this.dom.playPauseBtn ||
+      !this.dom.speedBtn ||
+      !this.dom.progressBar ||
+      !this.dom.audioPlayer ||
+      !this.dom.playModeBtn
+    ) {
+      return;
+    }
+
+    this.dom.playPauseBtn.addEventListener('click', () => {
+      if (this.dom.audioPlayer.paused) {
+        this.dom.audioPlayer.play();
+      } else {
+        this.dom.audioPlayer.pause();
+      }
+    });
+
+    this.dom.speedBtn.addEventListener('click', () => {
+      this.cyclePlaybackSpeed();
+    });
+
+    const seekByClientX = (clientX) => {
+      if (!this.dom.audioPlayer.duration) return;
+      const rect = this.dom.progressBar.getBoundingClientRect();
+      const percent = clamp((clientX - rect.left) / rect.width, 0, 1);
+      this.dom.audioPlayer.currentTime = percent * this.dom.audioPlayer.duration;
+    };
+
+    this.dom.progressBar.addEventListener('click', (event) => {
+      seekByClientX(event.clientX);
+    });
+
+    this.dom.progressBar.addEventListener('pointerdown', (event) => {
+      this.state.isProgressDragging = true;
+      this.dom.progressBar.setPointerCapture(event.pointerId);
+      seekByClientX(event.clientX);
+    });
+
+    this.dom.progressBar.addEventListener('pointermove', (event) => {
+      if (!this.state.isProgressDragging) return;
+      seekByClientX(event.clientX);
+    });
+
+    this.dom.progressBar.addEventListener('pointerup', (event) => {
+      this.state.isProgressDragging = false;
+      this.dom.progressBar.releasePointerCapture(event.pointerId);
+    });
+
+    this.dom.progressBar.addEventListener('pointerleave', () => {
+      this.state.isProgressDragging = false;
+    });
+
+    this.dom.playModeBtn.addEventListener('click', () => {
+      this.togglePlayMode();
+    });
+
+    this.dom.audioPlayer.addEventListener('timeupdate', () => {
+      this.checkSinglePlayEnd();
+      this.updateLyricHighlight();
+      this.updateProgress();
+    });
+
+    this.dom.audioPlayer.addEventListener('loadedmetadata', () => {
+      this.updateDuration();
+    });
+
+    this.dom.audioPlayer.addEventListener('ended', () => {
+      this.handleAudioEnded();
+      this.updatePlayButton();
+    });
+
+    this.dom.audioPlayer.addEventListener('play', () => {
+      this.updatePlayButton();
+    });
+
+    this.dom.audioPlayer.addEventListener('pause', () => {
+      this.state.singlePlayEndTime = null;
+      this.updatePlayButton();
+    });
+  }
+
+  bindNavigation() {
+    if (this.dom.prevUnitBtn) {
+      this.dom.prevUnitBtn.addEventListener('click', () => {
+        this.loadPreviousUnit();
+      });
+    }
+
+    if (this.dom.nextUnitBtn) {
+      this.dom.nextUnitBtn.addEventListener('click', () => {
+        this.loadNextUnit();
+      });
+    }
+  }
+}
+
+// 初始化系统
+document.addEventListener('DOMContentLoaded', () => {
+  new ReadingSystem();
+  initThemeToggle();
+  initSupportModal();
+});
+
+// 主题切换功能
+function initThemeToggle() {
+  const themeToggle = document.getElementById('themeToggle');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)');
+  if (!themeToggle) return;
+
+  const savedTheme = localStorage.getItem('theme');
+  if (savedTheme === 'dark' || (!savedTheme && prefersDark.matches)) {
+    document.body.classList.add('dark-theme');
+  }
+
+  themeToggle.addEventListener('click', () => {
+    document.body.classList.toggle('dark-theme');
+    const isDark = document.body.classList.contains('dark-theme');
+    localStorage.setItem('theme', isDark ? 'dark' : 'light');
+
+    themeToggle.style.transform = 'rotate(360deg)';
+    setTimeout(() => {
+      themeToggle.style.transform = '';
+    }, 300);
+  });
+
+  prefersDark.addEventListener('change', (event) => {
+    if (!localStorage.getItem('theme')) {
+      if (event.matches) {
+        document.body.classList.add('dark-theme');
+      } else {
+        document.body.classList.remove('dark-theme');
+      }
+    }
+  });
+}
+
+function initSupportModal() {
+  const supportBtn = document.getElementById('supportBtn');
+  const supportModal = document.getElementById('supportModal');
+  const supportCloseBtn = document.getElementById('supportCloseBtn');
+
+  if (!supportBtn || !supportModal || !supportCloseBtn) {
+    return;
+  }
+
+  const openModal = () => {
+    supportModal.classList.add('open');
+    supportModal.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+  };
+
+  const closeModal = () => {
+    supportModal.classList.remove('open');
+    supportModal.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+  };
+
+  supportBtn.addEventListener('click', openModal);
+  supportCloseBtn.addEventListener('click', closeModal);
+
+  supportModal.addEventListener('click', (event) => {
+    if (event.target === supportModal) {
+      closeModal();
+    }
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && supportModal.classList.contains('open')) {
+      closeModal();
+    }
+  });
+}
