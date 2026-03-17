@@ -84,10 +84,15 @@ body.dark-theme {
   --scroll-thumb-hover: rgba(200, 193, 184, 0.7);
 }
 
+html,
+body {
+  height: 100%;
+}
+
 body {
   font-family: var(--font-sans);
-  min-height: 100vh;
-  height: 100vh;
+  min-height: 100dvh;
+  height: 100dvh;
   overflow: hidden;
   color: var(--ink-1);
   line-height: 1.5;
@@ -96,6 +101,7 @@ body {
     radial-gradient(circle at 12% 8%, rgba(224, 78, 57, 0.14), transparent 40%),
     radial-gradient(circle at 88% 12%, rgba(31, 138, 122, 0.18), transparent 45%),
     linear-gradient(180deg, var(--paper-1) 0%, var(--paper-2) 100%);
+  background-color: var(--paper-1);
   transition: background-color 0.35s ease, color 0.35s ease;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -117,11 +123,13 @@ img {
 #app {
   max-width: 1560px;
   margin: 0 auto;
-  height: 100vh;
+  min-height: 100dvh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  padding: 18px;
+  padding: calc(18px + env(safe-area-inset-top)) calc(18px + env(safe-area-inset-right))
+    calc(18px + env(safe-area-inset-bottom)) calc(18px + env(safe-area-inset-left));
 }
 
 @keyframes riseIn {
@@ -375,7 +383,7 @@ body.dark-theme .moon-icon {
   width: 78px;
   height: 78px;
   object-fit: cover;
-  border-radius: 18px;
+  border-radius: 8px;
   border: 1px solid var(--border);
   box-shadow: var(--shadow-sm);
   transition: transform 0.22s ease, box-shadow 0.22s ease;
@@ -839,6 +847,18 @@ body.hide-translation .lyric-text {
   font-size: 20px;
 }
 
+body.blur-translation .lyric-translation,
+body.blur-translation .lyric-text {
+  filter: blur(4px);
+  opacity: 0.6;
+}
+
+body.blur-translation .lyric-line:hover .lyric-translation,
+body.blur-translation .lyric-line:hover .lyric-text {
+  filter: none;
+  opacity: 1;
+}
+
 .placeholder {
   text-align: center;
   color: var(--ink-3);
@@ -1221,8 +1241,6 @@ body::-webkit-scrollbar-thumb:hover,
 
   .control-panel {
     padding: 10px;
-    margin-top: 10px;
-    margin-bottom: 10px;
   }
 
   .navigation-buttons {

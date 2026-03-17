@@ -55,7 +55,7 @@ class ReadingSystem {
       playMode: 'single',
       singlePlayEndTime: null,
       playbackRate: 1.0,
-      showTranslation: true,
+      translationMode: 'show',
       availableSpeeds: [0.5, 0.75, 1.0, 1.25, 1.5, 2.0],
       savedPlayTime: 0,
       isProgressDragging: false
@@ -320,6 +320,10 @@ class ReadingSystem {
 
   renderLyrics() {
     if (!this.dom.lyricsDisplay) return;
+
+    if (this.dom.lyricsContainer) {
+      this.dom.lyricsContainer.scrollTop = 0;
+    }
 
     if (!this.state.currentLyrics.length) {
       this.dom.lyricsDisplay.innerHTML = '<p class="placeholder">没有歌词数据</p>';
@@ -601,29 +605,40 @@ class ReadingSystem {
   bindTranslationToggle() {
     if (!this.dom.toggleTranslationBtn) return;
     this.dom.toggleTranslationBtn.addEventListener('click', () => {
-      this.state.showTranslation = !this.state.showTranslation;
-      localStorage.setItem('showTranslation', this.state.showTranslation ? '1' : '0');
+      const modes = ['show', 'hide', 'blur'];
+      const currentIndex = modes.indexOf(this.state.translationMode);
+      const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % modes.length;
+      this.state.translationMode = modes[nextIndex];
+      localStorage.setItem('translationMode', this.state.translationMode);
       this.updateTranslationToggle();
     });
   }
 
   loadTranslationPreference() {
-    const stored = localStorage.getItem('showTranslation');
-    if (stored === '0') {
-      this.state.showTranslation = false;
+    const storedMode = localStorage.getItem('translationMode');
+    if (storedMode === 'show' || storedMode === 'hide' || storedMode === 'blur') {
+      this.state.translationMode = storedMode;
     }
   }
 
   updateTranslationToggle() {
     if (!this.dom.toggleTranslationBtn) return;
-    if (this.state.showTranslation) {
-      document.body.classList.remove('hide-translation');
-      this.dom.toggleTranslationBtn.textContent = '英';
-      this.dom.toggleTranslationBtn.setAttribute('aria-pressed', 'true');
-    } else {
-      document.body.classList.add('hide-translation');
+    const mode = this.state.translationMode;
+    document.body.classList.toggle('hide-translation', mode === 'hide');
+    document.body.classList.toggle('blur-translation', mode === 'blur');
+
+    if (mode === 'show') {
       this.dom.toggleTranslationBtn.textContent = '中';
+      this.dom.toggleTranslationBtn.setAttribute('aria-pressed', 'true');
+      this.dom.toggleTranslationBtn.setAttribute('aria-label', '翻译显示');
+    } else if (mode === 'blur') {
+      this.dom.toggleTranslationBtn.textContent = '模';
+      this.dom.toggleTranslationBtn.setAttribute('aria-pressed', 'mixed');
+      this.dom.toggleTranslationBtn.setAttribute('aria-label', '翻译模糊显示');
+    } else {
+      this.dom.toggleTranslationBtn.textContent = '英';
       this.dom.toggleTranslationBtn.setAttribute('aria-pressed', 'false');
+      this.dom.toggleTranslationBtn.setAttribute('aria-label', '仅显示英文');
     }
   }
 
