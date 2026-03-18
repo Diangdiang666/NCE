@@ -374,7 +374,7 @@ body.dark-theme .moon-icon {
   gap: 14px;
   flex-wrap: wrap;
   width: 100%;
-  padding: 14px 16px;
+  padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: 20px;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.86), rgba(255, 247, 235, 0.72));
@@ -694,9 +694,23 @@ body.dark-theme .control-panel {
   box-shadow: 0 12px 24px var(--accent-strong);
 }
 
+.play-btn:disabled {
+  background: #b8bec8;
+  box-shadow: none;
+  cursor: not-allowed;
+  opacity: 0.75;
+  transform: none;
+}
+
 .play-btn:hover {
   background: var(--accent-2);
   transform: translateY(-1px);
+}
+
+.play-btn:disabled:hover,
+.play-btn:disabled:active {
+  background: #b8bec8;
+  transform: none;
 }
 
 .play-btn:active {

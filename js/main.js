@@ -275,6 +275,7 @@ class ReadingSystem {
     }
 
     if (this.dom.audioPlayer) {
+      this.setPlayButtonDisabled(true);
       this.dom.audioPlayer.src = unit.audio;
       this.dom.audioPlayer.load();
     }
@@ -289,6 +290,8 @@ class ReadingSystem {
       this.dom.audioPlayer.pause();
       this.dom.audioPlayer.currentTime = 0;
     }
+
+    this.setPlayButtonDisabled(true);
 
     if (this.dom.progressBar) this.dom.progressBar.style.setProperty('--progress', '0%');
     if (this.dom.currentTime) this.dom.currentTime.textContent = '0:00';
@@ -414,6 +417,12 @@ class ReadingSystem {
     } else {
       this.dom.playPauseBtn.classList.add('playing');
     }
+  }
+
+  setPlayButtonDisabled(disabled) {
+    if (!this.dom.playPauseBtn) return;
+    this.dom.playPauseBtn.disabled = disabled;
+    this.dom.playPauseBtn.setAttribute('aria-disabled', disabled ? 'true' : 'false');
   }
 
   formatTime(seconds) {
@@ -784,6 +793,14 @@ class ReadingSystem {
       this.updateDuration();
     });
 
+    this.dom.audioPlayer.addEventListener('canplay', () => {
+      this.setPlayButtonDisabled(false);
+    });
+
+    this.dom.audioPlayer.addEventListener('loadstart', () => {
+      this.setPlayButtonDisabled(true);
+    });
+
     this.dom.audioPlayer.addEventListener('ended', () => {
       this.handleAudioEnded();
       this.updatePlayButton();
@@ -796,6 +813,10 @@ class ReadingSystem {
     this.dom.audioPlayer.addEventListener('pause', () => {
       this.state.singlePlayEndTime = null;
       this.updatePlayButton();
+    });
+
+    this.dom.audioPlayer.addEventListener('error', () => {
+      this.setPlayButtonDisabled(true);
     });
   }
 
