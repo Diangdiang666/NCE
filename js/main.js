@@ -151,6 +151,7 @@ class ReadingSystem {
     await this.loadBookConfig();
     this.renderUnitList();
     this.renderUnitSelect();
+    this.resetUnitListScroll();
   }
 
   renderEmptyState(message) {
@@ -159,6 +160,14 @@ class ReadingSystem {
     }
     if (this.dom.unitList) {
       this.dom.unitList.innerHTML = '';
+    }
+    this.resetUnitListScroll();
+  }
+
+  resetUnitListScroll() {
+    const scrollContainer = this.dom.unitList?.closest('.unit-list');
+    if (scrollContainer) {
+      scrollContainer.scrollTop = 0;
     }
   }
 
@@ -306,13 +315,20 @@ class ReadingSystem {
 
   updateActiveUnit(unitIndex) {
     if (this.dom.unitList) {
+      let activeItem = null;
+
       this.dom.unitList.querySelectorAll('.unit-item').forEach((item, index) => {
         if (index === unitIndex) {
           item.classList.add('active');
+          activeItem = item;
         } else {
           item.classList.remove('active');
         }
       });
+
+      if (activeItem) {
+        activeItem.scrollIntoView({ block: 'center', inline: 'nearest' });
+      }
     }
 
     if (this.dom.unitSelect) {
