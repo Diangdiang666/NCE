@@ -204,7 +204,7 @@ class ReadingSystem {
       .join('');
 
     this.dom.bookSelects.forEach((select) => {
-      select.innerHTML = `<option value="">选择课本</option>${options}`;
+      select.innerHTML = `${options}`;
       if (this.state.bookKey) {
         select.value = this.state.bookKey;
       }
@@ -232,7 +232,7 @@ class ReadingSystem {
       .map((unit, index) => `<option value="${index}">${unit.title}</option>`)
       .join('');
 
-    this.dom.unitSelect.innerHTML = `<option value="">选择 Unit</option>${options}`;
+    this.dom.unitSelect.innerHTML = `${options}`;
   }
 
   async loadUnitFromStorage() {

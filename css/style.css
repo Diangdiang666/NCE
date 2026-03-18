@@ -147,7 +147,7 @@ img {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-4);
+  gap: var(--space-1);
   padding: var(--space-4) var(--space-5);
   border-radius: var(--radius-xl);
   border: 1px solid var(--border-strong);
@@ -163,6 +163,16 @@ img {
   min-width: 0;
 }
 
+.header-book-select {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.header-book-select .book-select {
+  min-width: 220px;
+}
+
 .app-header h1 {
   font-family: var(--font-display);
   font-size: clamp(30px, 4vw, 58px);
@@ -172,7 +182,6 @@ img {
 }
 
 .subtitle {
-  margin-top: 6px;
   color: var(--ink-2);
   font-size: clamp(12px, 1.3vw, 18px);
   letter-spacing: 0.02em;
@@ -308,13 +317,14 @@ body.dark-theme .moon-icon {
 }
 
 .unit-item {
-  padding: 14px 14px;
+  padding: 4px 8px;
   border-radius: var(--radius-sm);
   background: transparent;
   cursor: pointer;
   transition: background-color 0.18s ease, transform 0.18s ease, border-color 0.18s ease;
   border: 1px solid transparent;
   min-width: 0;
+  border: 1px solid var(--border);
 }
 
 .unit-item:hover {
@@ -482,8 +492,8 @@ body.dark-theme .book-info {
 }
 
 .control-panel {
-  margin-top: 6px;
-  margin-bottom: 6px;
+  margin-top: 4px;
+  margin-bottom: 4px;
   padding: 8px;
   border-radius: 18px;
   border: 1px solid var(--border);
@@ -545,8 +555,6 @@ body.dark-theme .control-panel {
 
 .unit-select,
 .book-select {
-  width: 100%;
-  min-width: 150px;
   height: 42px;
   padding: 0 38px 0 12px;
   background: var(--paper-2);
@@ -865,7 +873,7 @@ body.dark-theme .lyrics-container {
 .lyrics-display {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .toggle-translation-btn {
@@ -932,7 +940,7 @@ body.blur-translation .lyric-line:hover .lyric-text {
   cursor: pointer;
   transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
   background: transparent;
-  border: 1px solid transparent;
+  border: 1px solid var(--border);
   word-wrap: break-word;
   overflow-wrap: break-word;
   position: relative;
@@ -968,7 +976,7 @@ body.blur-translation .lyric-line:hover .lyric-text {
 }
 
 .lyric-line.pulse {
-  animation: lyricPulse 0.4s ease;
+  /*animation: lyricPulse 0.4s ease;*/
 }
 
 .lyric-text {
@@ -1222,7 +1230,7 @@ body::-webkit-scrollbar-thumb:hover,
     height: 100dvh;
     min-height: 100dvh;
     padding: 8px;
-    gap: 8px;
+    gap: 4px;
     overflow: hidden;
   }
 
@@ -1256,10 +1264,21 @@ body::-webkit-scrollbar-thumb:hover,
     padding: 8px 12px;
     border-radius: 16px;
     align-items: flex-start;
+    flex-wrap: wrap;
   }
 
   .header-actions {
     gap: 8px;
+    margin-left: auto;
+  }
+
+  .header-book-select {
+    order: 3;
+    width: 100%;
+  }
+
+  .header-book-select .book-select {
+    width: 100%;
   }
 
   .status-pill {
@@ -1354,7 +1373,7 @@ body::-webkit-scrollbar-thumb:hover,
 
   .unit-select,
   .book-select {
-    min-width: 0;
+    min-width: 280px;
     height: 32px;
     padding: 0 30px 0 10px;
     font-size: 12px;
@@ -1418,7 +1437,7 @@ body::-webkit-scrollbar-thumb:hover,
   }
 
   .lyric-line {
-    padding: 8px;
+    padding: 4px 8px;
     border-radius: 10px;
   }
 
