@@ -71,8 +71,6 @@ class ReadingSystem {
       playModeBtn: qs('#playModeBtn'),
       playPauseBtn: qs('#playPauseBtn'),
       progressBar: qs('#progressBar'),
-      progressFill: qs('#progressFill'),
-      progressHandle: qs('#progressHandle'),
       currentTime: qs('#currentTime'),
       duration: qs('#duration'),
       speedBtn: qs('#speedBtn'),
@@ -292,8 +290,7 @@ class ReadingSystem {
       this.dom.audioPlayer.currentTime = 0;
     }
 
-    if (this.dom.progressFill) this.dom.progressFill.style.width = '0%';
-    if (this.dom.progressHandle) this.dom.progressHandle.style.left = '0%';
+    if (this.dom.progressBar) this.dom.progressBar.style.setProperty('--progress', '0%');
     if (this.dom.currentTime) this.dom.currentTime.textContent = '0:00';
     if (this.dom.duration) this.dom.duration.textContent = '0:00';
 
@@ -385,20 +382,23 @@ class ReadingSystem {
   }
 
   updateProgress() {
-    if (!this.dom.progressFill || !this.dom.progressHandle || !this.dom.currentTime || !this.dom.audioPlayer) return;
+    if (!this.dom.progressBar || !this.dom.audioPlayer) return;
 
     if (this.dom.audioPlayer.duration && !this.state.isProgressDragging) {
       const percent = (this.dom.audioPlayer.currentTime / this.dom.audioPlayer.duration) * 100;
-      this.dom.progressFill.style.width = `${percent}%`;
-      this.dom.progressHandle.style.left = `${percent}%`;
-      this.dom.currentTime.textContent = this.formatTime(this.dom.audioPlayer.currentTime);
+      this.dom.progressBar.style.setProperty('--progress', `${percent}%`);
+      if (this.dom.currentTime) {
+        this.dom.currentTime.textContent = this.formatTime(this.dom.audioPlayer.currentTime);
+      }
     }
   }
 
   updateDuration() {
-    if (!this.dom.duration || !this.dom.audioPlayer) return;
+    if (!this.dom.audioPlayer) return;
 
-    this.dom.duration.textContent = this.formatTime(this.dom.audioPlayer.duration);
+    if (this.dom.duration) {
+      this.dom.duration.textContent = this.formatTime(this.dom.audioPlayer.duration);
+    }
     if (this.state.savedPlayTime > 0 && this.dom.audioPlayer.duration) {
       this.dom.audioPlayer.currentTime = Math.min(this.state.savedPlayTime, this.dom.audioPlayer.duration - 0.1);
       this.state.savedPlayTime = 0;
@@ -744,6 +744,7 @@ class ReadingSystem {
 
     this.dom.progressBar.addEventListener('pointerdown', (event) => {
       this.state.isProgressDragging = true;
+      this.dom.progressBar.classList.add('dragging');
       this.dom.progressBar.setPointerCapture(event.pointerId);
       seekByClientX(event.clientX);
     });
@@ -755,11 +756,18 @@ class ReadingSystem {
 
     this.dom.progressBar.addEventListener('pointerup', (event) => {
       this.state.isProgressDragging = false;
+      this.dom.progressBar.classList.remove('dragging');
       this.dom.progressBar.releasePointerCapture(event.pointerId);
+    });
+
+    this.dom.progressBar.addEventListener('pointercancel', () => {
+      this.state.isProgressDragging = false;
+      this.dom.progressBar.classList.remove('dragging');
     });
 
     this.dom.progressBar.addEventListener('pointerleave', () => {
       this.state.isProgressDragging = false;
+      this.dom.progressBar.classList.remove('dragging');
     });
 
     this.dom.playModeBtn.addEventListener('click', () => {
