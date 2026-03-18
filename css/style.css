@@ -626,27 +626,29 @@ body.dark-theme .control-panel {
 
 .play-mode-btn .mode-icon {
   color: var(--ink-2);
-  transition: color 0.2s ease;
+  transition: color 0.2s ease, transform 0.25s ease;
   position: relative;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
 }
 
 .play-mode-btn:hover .mode-icon {
   color: var(--accent-1);
 }
 
+.play-mode-btn .single-icon,
+.play-mode-btn .continuous-icon {
+  transform-origin: center;
+  transition: opacity 0.2s ease, transform 0.25s ease;
+}
+
 .play-mode-btn .single-icon {
   opacity: 1;
-  transition: opacity 0.2s ease;
 }
 
 .play-mode-btn .continuous-icon {
   opacity: 0;
-  position: absolute;
-  left: 0;
-  top: 0;
-  transition: opacity 0.2s ease;
+  transform: scale(0.82);
 }
 
 .play-mode-btn.continuous-mode {
@@ -657,14 +659,17 @@ body.dark-theme .control-panel {
 
 .play-mode-btn.continuous-mode .single-icon {
   opacity: 0;
+  transform: scale(0.82);
 }
 
 .play-mode-btn.continuous-mode .continuous-icon {
   opacity: 1;
+  transform: scale(1);
 }
 
 .play-mode-btn.continuous-mode .mode-icon {
   color: #ffffff;
+  transform: rotate(-6deg);
 }
 
 .audio-player {

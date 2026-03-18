@@ -6,6 +6,7 @@
 // Copyright (c) 2025.
 
 const DEFAULT_BOOK_KEY = 'NCE1';
+const PLAY_MODE_STORAGE_KEY = 'playMode';
 
 const qs = (selector, root = document) => root.querySelector(selector);
 const qsa = (selector, root = document) => Array.from(root.querySelectorAll(selector));
@@ -98,6 +99,7 @@ class ReadingSystem {
     await this.loadBooks();
     await this.applyBookFromHash();
     this.bindEvents();
+    this.loadPlayModePreference();
     this.updatePlayModeUI();
     this.loadTranslationPreference();
     this.updateTranslationToggle();
@@ -504,6 +506,7 @@ class ReadingSystem {
 
   togglePlayMode() {
     this.state.playMode = this.state.playMode === 'single' ? 'continuous' : 'single';
+    localStorage.setItem(PLAY_MODE_STORAGE_KEY, this.state.playMode);
     this.updatePlayModeUI();
   }
 
@@ -512,10 +515,23 @@ class ReadingSystem {
 
     if (this.state.playMode === 'single') {
       this.dom.playModeBtn.title = '单句点读';
+      this.dom.playModeBtn.setAttribute('aria-label', '单句点读');
+      this.dom.playModeBtn.setAttribute('aria-pressed', 'false');
+      this.dom.playModeBtn.dataset.mode = 'single';
       this.dom.playModeBtn.classList.remove('continuous-mode');
     } else {
       this.dom.playModeBtn.title = '连续点读';
+      this.dom.playModeBtn.setAttribute('aria-label', '连续点读');
+      this.dom.playModeBtn.setAttribute('aria-pressed', 'true');
+      this.dom.playModeBtn.dataset.mode = 'continuous';
       this.dom.playModeBtn.classList.add('continuous-mode');
+    }
+  }
+
+  loadPlayModePreference() {
+    const storedMode = localStorage.getItem(PLAY_MODE_STORAGE_KEY);
+    if (storedMode === 'single' || storedMode === 'continuous') {
+      this.state.playMode = storedMode;
     }
   }
 
