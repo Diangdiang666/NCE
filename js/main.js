@@ -13,7 +13,6 @@ const qs = (selector, root = document) => root.querySelector(selector);
 const qsa = (selector, root = document) => Array.from(root.querySelectorAll(selector));
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
-
 class ReadingSystem {
   constructor() {
     this.state = {
@@ -28,7 +27,7 @@ class ReadingSystem {
       singlePlayEndTime: null,
       playbackRate: 1.0,
       translationMode: 'show',
-      reciteMode: false, // 新增：背诵模式状态
+      reciteMode: false,
       availableSpeeds: [0.5, 0.75, 1.0, 1.25, 1.5, 2.0],
       savedPlayTime: 0,
       isProgressDragging: false
@@ -54,7 +53,7 @@ class ReadingSystem {
       prevUnitBtn: qs('#prevUnitBtn'),
       nextUnitBtn: qs('#nextUnitBtn'),
       toggleTranslationBtn: qs('#toggleTranslationBtn'),
-      reciteModeBtn: qs('#reciteModeBtn') // 新增：背诵按钮 DOM 引用
+      reciteModeBtn: qs('#reciteModeBtn') 
     };
 
     this.lyricLineEls = [];
@@ -69,7 +68,7 @@ class ReadingSystem {
   }
 
   async init() {
-    this.injectReciteStyles(); // 新增：注入背诵模式专属样式
+    this.injectReciteStyles(); 
     await this.loadBooks();
     await this.applyBookFromHash();
     this.bindEvents();
@@ -77,31 +76,31 @@ class ReadingSystem {
     this.updatePlayModeUI();
     this.loadTranslationPreference();
     this.updateTranslationToggle();
-    this.loadRecitePreference(); // 新增：读取背诵模式记忆
-    this.updateReciteUI();       // 新增：更新背诵按钮 UI
+    this.loadRecitePreference(); 
+    this.updateReciteUI();       
     await this.loadUnitFromStorage();
   }
 
-  // ==== 新增核心功能：背诵模式相关逻辑开始 ==== //
+  // ==== 背诵模式核心逻辑 ==== //
   injectReciteStyles() {
     if (document.getElementById('recite-mode-styles')) return;
     const style = document.createElement('style');
     style.id = 'recite-mode-styles';
     style.innerHTML = `
       body.recite-mode .lyric-text {
-        display: none !important; /* 隐藏英文 */
+        display: none !important; 
       }
       body.recite-mode .lyric-translation {
         display: block !important;
-        font-size: 1.15em !important; /* 中文变大 */
+        font-size: 1.15em !important; 
         color: inherit !important;
-        filter: none !important; /* 强制取消原来的模糊模式 */
-        opacity: 1 !important;   /* 强制取消原来的隐藏模式 */
+        filter: none !important; 
+        opacity: 1 !important;   
         font-weight: 600;
         padding: 4px 0;
       }
       body.recite-mode .lyric-line.active .lyric-translation {
-        color: #ff6b35 !important; /* 播放当前句时，中文高亮变成橙色 */
+        color: #ff6b35 !important; 
       }
     `;
     document.head.appendChild(style);
@@ -115,10 +114,8 @@ class ReadingSystem {
   updateReciteUI() {
     if (!this.dom.reciteModeBtn) return;
     
-    // 给 body 切换 class，触发刚才注入的 CSS
     document.body.classList.toggle('recite-mode', this.state.reciteMode);
     
-    // 更新按钮本身的样式（点亮变成橙色）
     if (this.state.reciteMode) {
       this.dom.reciteModeBtn.style.color = '#ff6b35';
       this.dom.reciteModeBtn.style.borderColor = '#ff6b35';
@@ -132,15 +129,43 @@ class ReadingSystem {
     }
   }
 
+  // 提取出的独立切换方法
+  toggleReciteMode() {
+    this.state.reciteMode = !this.state.reciteMode;
+    localStorage.setItem('reciteMode', this.state.reciteMode);
+    this.updateReciteUI();
+  }
+
   bindReciteToggle() {
     if (!this.dom.reciteModeBtn) return;
+    
+    // 1. 鼠标点击控制
     this.dom.reciteModeBtn.addEventListener('click', () => {
-      this.state.reciteMode = !this.state.reciteMode;
-      localStorage.setItem('reciteMode', this.state.reciteMode); // 记忆用户选择
-      this.updateReciteUI();
+      this.toggleReciteMode();
+    });
+
+    // 2. 键盘 Ctrl 键控制（带组合键防误触保护）
+    let isCtrlCombination = false;
+
+    document.addEventListener('keydown', (event) => {
+      // 如果按下了 Ctrl，同时又按下了其他键（比如 C），则标记为组合键
+      if (event.key !== 'Control' && event.ctrlKey) {
+        isCtrlCombination = true;
+      }
+    });
+
+    document.addEventListener('keyup', (event) => {
+      if (event.key === 'Control') {
+        // 只有当没有使用组合键时，松开 Ctrl 才会触发背诵模式
+        if (!isCtrlCombination) {
+          this.toggleReciteMode();
+        }
+        // 重置组合键状态
+        isCtrlCombination = false;
+      }
     });
   }
-  // ==== 背诵模式相关逻辑结束 ==== //
+  // ==== 背诵模式逻辑结束 ==== //
 
   async loadBooks() {
     if (this.state.books.length) return this.state.books;
@@ -687,7 +712,7 @@ class ReadingSystem {
     this.bindPlayerControls();
     this.bindNavigation();
     this.bindTranslationToggle();
-    this.bindReciteToggle(); // 新增：绑定背诵按钮事件
+    this.bindReciteToggle(); 
 
     window.addEventListener('hashchange', () => {
       const newKey = location.hash.slice(1).trim() || DEFAULT_BOOK_KEY;
@@ -997,8 +1022,6 @@ function initSupportModal() {
   });
 }
 
-
-
 // LRC 解析器
 class LRCParser {
   static parse(lrcText) {
@@ -1013,7 +1036,6 @@ class LRCParser {
         const milliseconds = parseInt(match[3]);
         const time = minutes * 60 + seconds + milliseconds / 1000 - 0.5;
 
-        // 分割英文和中文（使用 | 分隔符）
         const text = match[4].trim();
         const parts = text.split('|').map((p) => p.trim());
 
