@@ -28,6 +28,7 @@ class ReadingSystem {
       singlePlayEndTime: null,
       playbackRate: 1.0,
       translationMode: 'show',
+      reciteMode: false, // 新增：背诵模式状态
       availableSpeeds: [0.5, 0.75, 1.0, 1.25, 1.5, 2.0],
       savedPlayTime: 0,
       isProgressDragging: false
@@ -52,7 +53,8 @@ class ReadingSystem {
       bookSelects: qsa('.book-select'),
       prevUnitBtn: qs('#prevUnitBtn'),
       nextUnitBtn: qs('#nextUnitBtn'),
-      toggleTranslationBtn: qs('#toggleTranslationBtn')
+      toggleTranslationBtn: qs('#toggleTranslationBtn'),
+      reciteModeBtn: qs('#reciteModeBtn') // 新增：背诵按钮 DOM 引用
     };
 
     this.lyricLineEls = [];
@@ -67,6 +69,7 @@ class ReadingSystem {
   }
 
   async init() {
+    this.injectReciteStyles(); // 新增：注入背诵模式专属样式
     await this.loadBooks();
     await this.applyBookFromHash();
     this.bindEvents();
@@ -74,8 +77,70 @@ class ReadingSystem {
     this.updatePlayModeUI();
     this.loadTranslationPreference();
     this.updateTranslationToggle();
+    this.loadRecitePreference(); // 新增：读取背诵模式记忆
+    this.updateReciteUI();       // 新增：更新背诵按钮 UI
     await this.loadUnitFromStorage();
   }
+
+  // ==== 新增核心功能：背诵模式相关逻辑开始 ==== //
+  injectReciteStyles() {
+    if (document.getElementById('recite-mode-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'recite-mode-styles';
+    style.innerHTML = `
+      body.recite-mode .lyric-text {
+        display: none !important; /* 隐藏英文 */
+      }
+      body.recite-mode .lyric-translation {
+        display: block !important;
+        font-size: 1.15em !important; /* 中文变大 */
+        color: inherit !important;
+        filter: none !important; /* 强制取消原来的模糊模式 */
+        opacity: 1 !important;   /* 强制取消原来的隐藏模式 */
+        font-weight: 600;
+        padding: 4px 0;
+      }
+      body.recite-mode .lyric-line.active .lyric-translation {
+        color: #ff6b35 !important; /* 播放当前句时，中文高亮变成橙色 */
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  loadRecitePreference() {
+    const storedMode = localStorage.getItem('reciteMode');
+    this.state.reciteMode = storedMode === 'true';
+  }
+
+  updateReciteUI() {
+    if (!this.dom.reciteModeBtn) return;
+    
+    // 给 body 切换 class，触发刚才注入的 CSS
+    document.body.classList.toggle('recite-mode', this.state.reciteMode);
+    
+    // 更新按钮本身的样式（点亮变成橙色）
+    if (this.state.reciteMode) {
+      this.dom.reciteModeBtn.style.color = '#ff6b35';
+      this.dom.reciteModeBtn.style.borderColor = '#ff6b35';
+      this.dom.reciteModeBtn.style.backgroundColor = 'rgba(255, 107, 53, 0.1)';
+      this.dom.reciteModeBtn.setAttribute('aria-pressed', 'true');
+    } else {
+      this.dom.reciteModeBtn.style.color = '';
+      this.dom.reciteModeBtn.style.borderColor = '';
+      this.dom.reciteModeBtn.style.backgroundColor = '';
+      this.dom.reciteModeBtn.setAttribute('aria-pressed', 'false');
+    }
+  }
+
+  bindReciteToggle() {
+    if (!this.dom.reciteModeBtn) return;
+    this.dom.reciteModeBtn.addEventListener('click', () => {
+      this.state.reciteMode = !this.state.reciteMode;
+      localStorage.setItem('reciteMode', this.state.reciteMode); // 记忆用户选择
+      this.updateReciteUI();
+    });
+  }
+  // ==== 背诵模式相关逻辑结束 ==== //
 
   async loadBooks() {
     if (this.state.books.length) return this.state.books;
@@ -622,6 +687,7 @@ class ReadingSystem {
     this.bindPlayerControls();
     this.bindNavigation();
     this.bindTranslationToggle();
+    this.bindReciteToggle(); // 新增：绑定背诵按钮事件
 
     window.addEventListener('hashchange', () => {
       const newKey = location.hash.slice(1).trim() || DEFAULT_BOOK_KEY;
