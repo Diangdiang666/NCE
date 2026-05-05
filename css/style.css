@@ -520,6 +520,7 @@ body.dark-theme .control-panel {
   justify-content: center;
   gap: 10px;
   margin-bottom: 6px;
+  flex-wrap: wrap; /* 添加：防止多个按钮导致小屏幕挤压 */
 }
 
 .nav-btn {
@@ -602,10 +603,6 @@ body.dark-theme .control-panel {
 .book-select:focus {
   box-shadow: 0 0 0 3px var(--accent-3);
 }
-
-/*.unit-title-group .unit-select {*/
-/*  margin-top: 8px;*/
-/*}*/
 
 .play-mode-btn {
   display: inline-flex;
@@ -891,7 +888,9 @@ body.dark-theme .lyrics-container {
   gap: 4px;
 }
 
-.toggle-translation-btn {
+/* 合并中英文切换与背书模式按钮样式 */
+.toggle-translation-btn,
+.recite-mode-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -907,17 +906,19 @@ body.dark-theme .lyrics-container {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   cursor: pointer;
-  transition: transform 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+  transition: transform 0.2s ease, background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
 
-.toggle-translation-btn:hover {
+.toggle-translation-btn:hover,
+.recite-mode-btn:hover {
   background: var(--accent-3);
   border-color: var(--accent-1);
   color: var(--ink-1);
   transform: translateY(-1px);
 }
 
-.toggle-translation-btn:active {
+.toggle-translation-btn:active,
+.recite-mode-btn:active {
   transform: scale(0.98);
 }
 
@@ -939,6 +940,36 @@ body.blur-translation .lyric-line:hover .lyric-translation,
 body.blur-translation .lyric-line:hover .lyric-text {
   filter: none;
   opacity: 1;
+}
+
+/* ========================================= */
+/*              背书模式专属样式               */
+/* ========================================= */
+body.recite-mode .lyric-text {
+  display: none !important; 
+}
+
+body.recite-mode .lyric-translation {
+  display: block !important;
+  font-size: 1.15em !important; 
+  color: inherit !important;
+  filter: none !important; 
+  opacity: 1 !important;   
+  font-weight: 600;
+  padding: 4px 0;
+}
+
+/* 关联主题色，让中文也能像原版一样高亮 */
+body.recite-mode .lyric-line.active .lyric-translation {
+  color: var(--accent-1) !important; 
+}
+
+/* 按钮的激活状态 (作为备用，或者如果你去除了 JS 的内联样式) */
+.recite-mode-btn[aria-pressed="true"],
+.recite-mode-btn.active {
+  color: var(--accent-1);
+  border-color: var(--accent-1);
+  background-color: var(--accent-3);
 }
 
 .placeholder {
@@ -1402,7 +1433,8 @@ body::-webkit-scrollbar-thumb:hover,
     padding: 0 10px;
   }
 
-  .toggle-translation-btn {
+  .toggle-translation-btn,
+  .recite-mode-btn {
     height: 36px;
     font-size: 11px;
   }
@@ -1475,23 +1507,4 @@ body::-webkit-scrollbar-thumb:hover,
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-}
-#autoPauseBtn.active {
-    background-color: var(--accent-1);
-    color: #fff;
-    border-color: var(--accent-1);
-    box-shadow: 0 4px 12px var(--accent-strong);
-}
-.lyric-line.active {
-    background: var(--accent-3) !important;
-    border-color: var(--accent-1) !important;
-    transform: scale(1.01);
-    transition: all 0.2s ease;
-}
-.lyric-line.pulse {
-    animation: lyricHighlightPulse 0.5s ease-out;
-}
-@keyframes lyricHighlightPulse {
-    0% { background: var(--accent-strong); }
-    100% { background: var(--accent-3); }
 }
