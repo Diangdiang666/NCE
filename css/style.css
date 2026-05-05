@@ -520,7 +520,7 @@ body.dark-theme .control-panel {
   justify-content: center;
   gap: 10px;
   margin-bottom: 6px;
-  flex-wrap: wrap; /* 添加防挤压 */
+  flex-wrap: wrap; 
 }
 
 .nav-btn {
@@ -888,9 +888,10 @@ body.dark-theme .lyrics-container {
   gap: 4px;
 }
 
-/* 合并中英文切换与背书模式按钮样式，保持全端风格严格一致 */
+/* 按钮统一组 */
 .toggle-translation-btn,
-.recite-mode-btn {
+.recite-mode-btn,
+.dictation-mode-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -910,7 +911,8 @@ body.dark-theme .lyrics-container {
 }
 
 .toggle-translation-btn:hover,
-.recite-mode-btn:hover {
+.recite-mode-btn:hover,
+.dictation-mode-btn:hover {
   background: var(--accent-3);
   border-color: var(--accent-1);
   color: var(--ink-1);
@@ -918,10 +920,12 @@ body.dark-theme .lyrics-container {
 }
 
 .toggle-translation-btn:active,
-.recite-mode-btn:active {
+.recite-mode-btn:active,
+.dictation-mode-btn:active {
   transform: scale(0.98);
 }
 
+/* 状态控制 */
 body.hide-translation .lyric-translation {
   display: none;
 }
@@ -959,12 +963,10 @@ body.recite-mode .lyric-translation {
   padding: 4px 0;
 }
 
-/* 关联主题色，让中文也能像原版一样高亮 */
 body.recite-mode .lyric-line.active .lyric-translation {
   color: var(--accent-1) !important; 
 }
 
-/* 背书按钮选中激活状态 */
 .recite-mode-btn[aria-pressed="true"],
 .recite-mode-btn.active {
   color: var(--accent-1);
@@ -972,6 +974,66 @@ body.recite-mode .lyric-line.active .lyric-translation {
   background-color: var(--accent-3);
 }
 
+/* ========================================= */
+/*              听写模式专属样式               */
+/* ========================================= */
+body.dictation-mode .lyric-text {
+  display: none !important; 
+}
+
+.dictation-mode-btn[aria-pressed="true"],
+.dictation-mode-btn.active {
+  color: var(--teal);
+  border-color: var(--teal);
+  background-color: rgba(31, 138, 122, 0.18);
+}
+
+.dictation-container {
+  display: none;
+  margin-top: 10px;
+}
+
+/* 听写模式下，只有高亮的当前句才显示输入框 */
+body.dictation-mode .lyric-line.active .dictation-container {
+  display: block;
+  animation: riseIn 0.3s ease;
+}
+
+.dictation-input {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 2px solid var(--border-strong);
+  background: var(--paper-1);
+  color: var(--ink-1);
+  font-size: 16px;
+  font-weight: 600;
+  font-family: var(--font-display);
+  outline: none;
+  transition: border-color 0.2s;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.dictation-input:focus {
+  border-color: var(--teal);
+}
+
+.dictation-feedback {
+  margin-top: 10px;
+  font-size: 17px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  line-height: 1.4;
+  min-height: 24px;
+  word-wrap: break-word;
+  letter-spacing: 0.05em;
+}
+
+.diff-correct { color: var(--teal); font-weight: 700; }
+.diff-error { color: var(--accent-1); text-decoration: underline; text-decoration-color: var(--accent-1); text-decoration-thickness: 2px; }
+.diff-missing { color: var(--ink-3); opacity: 0.6; }
+
+/* 基础歌词容器 */
 .placeholder {
   text-align: center;
   color: var(--ink-3);
@@ -1002,20 +1064,6 @@ body.recite-mode .lyric-line.active .lyric-translation {
   background: var(--accent-3);
   border-color: var(--accent-strong);
   box-shadow: inset 0 0 0 1px var(--accent-strong);
-}
-
-@keyframes lyricPulse {
-  0% {
-    transform: translateY(6px);
-    opacity: 0;
-  }
-  40% {
-    opacity: 1;
-  }
-  100% {
-    transform: translateY(0);
-    opacity: 1;
-  }
 }
 
 .lyric-line.pulse {
@@ -1427,7 +1475,8 @@ body::-webkit-scrollbar-thumb:hover,
   }
 
   .toggle-translation-btn,
-  .recite-mode-btn {
+  .recite-mode-btn,
+  .dictation-mode-btn {
     height: 36px;
     font-size: 11px;
   }
