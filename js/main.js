@@ -27,7 +27,7 @@ class ReadingSystem {
       playbackRate: 1.0,
       translationMode: 'show',
       reciteMode: false,
-      dictationMode: false, // 新增：听写模式状态
+      dictationMode: false,
       availableSpeeds: [0.5, 0.75, 1.0, 1.25, 1.5, 2.0],
       savedPlayTime: 0,
       isProgressDragging: false,
@@ -61,7 +61,7 @@ class ReadingSystem {
       nextUnitBtn: qs('#nextUnitBtn'),
       toggleTranslationBtn: qs('#toggleTranslationBtn'),
       reciteModeBtn: qs('#reciteModeBtn'),
-      dictationModeBtn: qs('#dictationModeBtn') // 新增：听写按钮
+      dictationModeBtn: qs('#dictationModeBtn') 
     };
 
     this.lyricLineEls = [];
@@ -84,7 +84,6 @@ class ReadingSystem {
     this.loadTranslationPreference();
     this.updateTranslationToggle();
     
-    // 初始化背书与听写配置
     this.loadRecitePreference(); 
     this.updateReciteUI();
     this.loadDictationPreference();
@@ -107,7 +106,6 @@ class ReadingSystem {
     if (this.state.reciteMode) {
       this.dom.reciteModeBtn.setAttribute('aria-pressed', 'true');
       this.dom.reciteModeBtn.classList.add('active');
-      // 如果开启背书，则关闭听写
       if (this.state.dictationMode) this.toggleDictationMode();
     } else {
       this.dom.reciteModeBtn.setAttribute('aria-pressed', 'false');
@@ -135,10 +133,8 @@ class ReadingSystem {
     if (this.state.dictationMode) {
       this.dom.dictationModeBtn.setAttribute('aria-pressed', 'true');
       this.dom.dictationModeBtn.classList.add('active');
-      // 如果开启听写，则关闭背书
       if (this.state.reciteMode) this.toggleReciteMode();
       
-      // 聚焦当前输入框
       setTimeout(() => this.focusCurrentDictationInput(), 100);
     } else {
       this.dom.dictationModeBtn.setAttribute('aria-pressed', 'false');
@@ -157,8 +153,9 @@ class ReadingSystem {
     const activeLine = this.lyricLineEls[this.state.currentLyricIndex];
     if (activeLine) {
       const input = activeLine.querySelector('.dictation-input');
+      // 加入 preventScroll: true 防止聚焦时打断页面的平滑滚动定位
       if (input && document.activeElement !== input) {
-        input.focus();
+        input.focus({ preventScroll: true });
       }
     }
   }
@@ -182,45 +179,124 @@ class ReadingSystem {
     
     for (let i = 0; i < original.length; i++) {
         const origChar = original[i];
-        // 判断是否是字母或数字（核心逻辑：听写只拼写字母数字，自动跳过标点符号）
         const isAlphanumeric = /[a-zA-Z0-9]/.test(origChar);
         
         if (!isAlphanumeric) {
-            // 如果用户乖乖输入了标点，我们就吃掉它
             if (typed[tIdx] === origChar) {
                 html += `<span class="diff-correct">${origChar}</span>`;
                 tIdx++;
             } else {
-                // 如果用户没输入标点，自动帮他显示出来，不惩罚错误
                 html += `<span class="diff-correct">${origChar}</span>`;
             }
             continue;
         }
         
-        // 遇到真实的字母/数字
         if (tIdx < typed.length) {
             const typedChar = typed[tIdx];
             if (origChar.toLowerCase() === typedChar.toLowerCase()) {
-                // 对了显示绿色，且保留原句的大小写
                 html += `<span class="diff-correct">${origChar}</span>`;
             } else {
-                // 错了显示红色并带下划线
                 html += `<span class="diff-error">${typedChar}</span>`;
             }
             tIdx++;
         } else {
-            // 还没输入的部分显示灰色下划线
             html += `<span class="diff-missing">_</span>`;
         }
     }
     
-    // 如果用户手抖多输入了字母
     if (tIdx < typed.length) {
         html += `<span class="diff-error">${typed.substring(tIdx)}</span>`;
     }
     
     return html;
   }
+
+  // ================= 播放状态同步与 UI 控制 (完全重写解耦) ================= //
+
+  // 单纯控制播放，不操作 UI，避免和手动跳转产生冲突
+  playLyricAtIndex(index, time) {
+    if (!this.dom.audioPlayer) return;
+    this.dom.audioPlayer.currentTime = time;
+    
+    const nextLyric = this.state.currentLyrics[index + 1];
+    this.state.currentLyricEndTime = nextLyric ? nextLyric.time : this.dom.audioPlayer.duration;
+    
+    this.state.currentRepeatCount = 1; 
+    this.dom.audioPlayer.play();
+  }
+
+  // 全新独立的 UI 同步引擎，保证高亮、变色、滚动瞬间完成
+  syncLyricUI(newIndex) {
+    if (newIndex === this.state.currentLyricIndex) return;
+
+    // 清除旧的激活状态
+    if (this.state.currentLyricIndex >= 0 && this.lyricLineEls[this.state.currentLyricIndex]) {
+      this.lyricLineEls[this.state.currentLyricIndex].classList.remove('active', 'pulse');
+    }
+
+    this.state.currentLyricIndex = newIndex;
+
+    // 激活新状态并计算安全边界
+    if (newIndex >= 0) {
+      const nextLyric = this.state.currentLyrics[newIndex + 1];
+      this.state.currentLyricEndTime = nextLyric ? nextLyric.time : this.dom.audioPlayer.duration;
+
+      const activeLine = this.lyricLineEls[newIndex];
+      if (activeLine) {
+        activeLine.classList.add('active', 'pulse');
+        
+        if (this.shouldScrollLyricIntoView(activeLine)) {
+          activeLine.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        
+        if (this.state.dictationMode) {
+          const input = activeLine.querySelector('.dictation-input');
+          if (input && document.activeElement !== input) {
+            // preventScroll 保证不打断平滑滚动
+            input.focus({ preventScroll: true }); 
+          }
+        }
+      }
+    }
+  }
+
+  // 依赖原生的音频进度自然刷新歌词
+  updateLyricHighlight() {
+    if (!this.lyricLineEls.length || !this.dom.audioPlayer) return;
+
+    const currentTime = this.dom.audioPlayer.currentTime;
+    let newIndex = -1;
+    for (let i = this.state.currentLyrics.length - 1; i >= 0; i--) {
+      if (currentTime >= this.state.currentLyrics[i].time) {
+        newIndex = i;
+        break;
+      }
+    }
+    
+    this.syncLyricUI(newIndex);
+  }
+
+  // 快捷键强制跳句，同步执行播放与UI刷新
+  jumpToLyricImmediate(targetIndex) {
+    if (!this.state.currentLyrics || !this.state.currentLyrics.length) return;
+    targetIndex = clamp(targetIndex, 0, this.state.currentLyrics.length - 1);
+    
+    const targetLyric = this.state.currentLyrics[targetIndex];
+    if (!targetLyric) return;
+
+    this.playLyricAtIndex(targetIndex, targetLyric.time);
+    this.persistPlayTime(targetLyric.time);
+    this.syncLyricUI(targetIndex);
+  }
+
+  handleLyricActivate(line) {
+    const index = parseInt(line.dataset.index);
+    const time = parseFloat(line.dataset.time);
+    this.playLyricAtIndex(index, time);
+    this.persistPlayTime(time);
+    this.syncLyricUI(index);
+  }
+
 
   // ================= 快捷键与 Toast 提示 ================= //
 
@@ -262,18 +338,6 @@ class ReadingSystem {
     }, 2000);
   }
 
-  jumpToLyricImmediate(targetIndex) {
-    if (!this.state.currentLyrics || !this.state.currentLyrics.length) return;
-    targetIndex = clamp(targetIndex, 0, this.state.currentLyrics.length - 1);
-    
-    const targetLyric = this.state.currentLyrics[targetIndex];
-    if (!targetLyric) return;
-
-    this.playLyricAtIndex(targetIndex, targetLyric.time);
-    this.persistPlayTime(targetLyric.time);
-    this.updateLyricHighlight();
-  }
-
   bindGlobalShortcuts() {
     if (this.dom.reciteModeBtn) {
       this.dom.reciteModeBtn.addEventListener('click', () => this.toggleReciteMode());
@@ -289,26 +353,23 @@ class ReadingSystem {
       const targetTag = event.target.tagName.toLowerCase();
       const isDictationInput = event.target.classList.contains('dictation-input');
 
-      // 如果当前正在听写打字框里
+      // 听写模式下的打字框拦截机制
       if (isDictationInput) {
-          // 拦截 Tab 和 Enter 专门为听写服务
           if (event.key === 'Tab') {
               event.preventDefault();
               if (event.shiftKey) {
-                  this.jumpToLyricImmediate(this.state.currentLyricIndex - 1); // 相当于 A
+                  this.jumpToLyricImmediate(this.state.currentLyricIndex - 1); 
               } else {
-                  this.jumpToLyricImmediate(this.state.currentLyricIndex);     // 相当于 S
+                  this.jumpToLyricImmediate(this.state.currentLyricIndex);     
               }
               return;
           }
           if (event.key === 'Enter') {
               event.preventDefault();
-              this.jumpToLyricImmediate(this.state.currentLyricIndex + 1);     // 相当于 D
+              this.jumpToLyricImmediate(this.state.currentLyricIndex + 1);    
               return;
           }
-          // 在输入框里不要触发普通字母快捷键，让他正常打字！
       } 
-      // 在普通输入框里(非听写框)什么都不做
       else if (targetTag === 'input' || targetTag === 'textarea' || targetTag === 'select') {
           return; 
       }
@@ -332,7 +393,7 @@ class ReadingSystem {
         return;
       }
 
-      // A, S, D 全局控制 (如果没在输入框里)
+      // A, S, D 全局控制
       if (['a', 's', 'd'].includes(key) && !isDictationInput) {
         event.preventDefault(); 
         let currentIndex = this.state.currentLyricIndex;
@@ -356,7 +417,7 @@ class ReadingSystem {
     });
   }
 
-  // ========================================================= //
+  // ================= 数据加载及其他初始化 ================= //
 
   async loadBooks() {
     if (this.state.books.length) return this.state.books;
@@ -619,14 +680,12 @@ class ReadingSystem {
 
     this.dom.lyricsDisplay.innerHTML = this.state.currentLyrics
       .map((lyric, index) => {
-        // 渲染时顺便初始化一份听写下划线占位符
         const feedbackHTML = this.generateDiffHTML(lyric.english, '');
         return `
       <div class="lyric-line" data-index="${index}" data-time="${lyric.time}" tabindex="0" role="button" aria-label="播放第 ${index + 1} 句">
         <div class="lyric-text">${lyric.english}</div>
         ${lyric.chinese ? `<div class="lyric-translation">${lyric.chinese}</div>` : ''}
         
-        <!-- 听写区域 (默认隐藏，开启模式并播放到此句时出现) -->
         <div class="dictation-container" onclick="event.stopPropagation()">
             <input type="text" class="dictation-input" placeholder="输入听写内容 (Tab键重读, Enter下一句)" autocomplete="off" spellcheck="false">
             <div class="dictation-feedback">${feedbackHTML}</div>
@@ -638,31 +697,6 @@ class ReadingSystem {
 
     this.lyricLineEls = qsa('.lyric-line', this.dom.lyricsDisplay);
     this.state.currentLyricIndex = -1;
-  }
-
-  handleLyricActivate(line) {
-    const index = parseInt(line.dataset.index);
-    const time = parseFloat(line.dataset.time);
-    this.playLyricAtIndex(index, time);
-    this.persistPlayTime(time);
-    this.updateLyricHighlight();
-  }
-
-  playLyricAtIndex(index, time) {
-    if (!this.dom.audioPlayer) return;
-    this.dom.audioPlayer.currentTime = time;
-    
-    const nextLyric = this.state.currentLyrics[index + 1];
-    this.state.currentLyricEndTime = nextLyric ? nextLyric.time : this.dom.audioPlayer.duration;
-    
-    this.state.currentLyricIndex = index;
-    this.state.currentRepeatCount = 1; 
-
-    this.dom.audioPlayer.play();
-  }
-
-  persistPlayTime(time) {
-    localStorage.setItem(`${this.state.bookPath}/${this.state.currentUnitIndex}/playTime`, time);
   }
 
   checkLyricBoundary() {
@@ -864,51 +898,6 @@ class ReadingSystem {
     }
   }
 
-  updateLyricHighlight() {
-    if (!this.lyricLineEls.length || !this.dom.audioPlayer) return;
-
-    const currentTime = this.dom.audioPlayer.currentTime;
-    let newIndex = -1;
-    for (let i = this.state.currentLyrics.length - 1; i >= 0; i--) {
-      if (currentTime >= this.state.currentLyrics[i].time) {
-        newIndex = i;
-        break;
-      }
-    }
-
-    if (newIndex === this.state.currentLyricIndex) return;
-
-    if (this.state.currentLyricIndex >= 0 && this.lyricLineEls[this.state.currentLyricIndex]) {
-      this.lyricLineEls[this.state.currentLyricIndex].classList.remove('active');
-      this.lyricLineEls[this.state.currentLyricIndex].classList.remove('pulse');
-    }
-
-    this.state.currentLyricIndex = newIndex;
-
-    if (newIndex >= 0) {
-      const nextLyric = this.state.currentLyrics[newIndex + 1];
-      this.state.currentLyricEndTime = nextLyric ? nextLyric.time : this.dom.audioPlayer.duration;
-      this.state.currentRepeatCount = 1; 
-
-      const activeLine = this.lyricLineEls[newIndex];
-      if (activeLine) {
-        activeLine.classList.add('active');
-        activeLine.classList.add('pulse');
-        if (this.shouldScrollLyricIntoView(activeLine)) {
-          activeLine.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-        
-        // 如果处于听写模式，自动聚焦输入框
-        if (this.state.dictationMode) {
-          const input = activeLine.querySelector('.dictation-input');
-          if (input && document.activeElement !== input) {
-            input.focus();
-          }
-        }
-      }
-    }
-  }
-
   prefetchUnit(unitIndex) {
     const unit = this.state.units[unitIndex];
     if (!unit) return;
@@ -947,7 +936,6 @@ class ReadingSystem {
     this.bindTranslationToggle();
     this.bindGlobalShortcuts(); 
     
-    // 委托绑定输入框的 input 事件，避免每句生成一个监听器
     if (this.dom.lyricsDisplay) {
       this.dom.lyricsDisplay.addEventListener('input', (event) => {
         this.handleDictationInput(event);
@@ -1054,7 +1042,6 @@ class ReadingSystem {
 
     this.dom.lyricsDisplay.addEventListener('click', (event) => {
       const line = event.target.closest('.lyric-line');
-      // 如果点击的是输入框本身，不要触发跳句
       if (!line || event.target.classList.contains('dictation-input')) return;
       this.handleLyricActivate(line);
     });
@@ -1062,7 +1049,6 @@ class ReadingSystem {
     this.dom.lyricsDisplay.addEventListener('keydown', (event) => {
       if (event.key !== 'Enter' && event.key !== ' ') return;
       const line = event.target.closest('.lyric-line');
-      // 如果是输入框里的回车，不要在这里触发默认播放，交给快捷键逻辑处理
       if (!line || event.target.classList.contains('dictation-input')) return;
       event.preventDefault();
       this.handleLyricActivate(line);
@@ -1186,14 +1172,12 @@ class ReadingSystem {
   }
 }
 
-// 初始化系统
 document.addEventListener('DOMContentLoaded', () => {
   new ReadingSystem();
   initThemeToggle();
   initSupportModal();
 });
 
-// 主题切换功能
 function initThemeToggle() {
   const themeToggle = document.getElementById('themeToggle');
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)');
@@ -1263,7 +1247,6 @@ function initSupportModal() {
   });
 }
 
-// LRC 解析器
 class LRCParser {
   static parse(lrcText) {
     const lines = lrcText.split('\n');
