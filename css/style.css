@@ -520,7 +520,7 @@ body.dark-theme .control-panel {
   justify-content: center;
   gap: 10px;
   margin-bottom: 6px;
-  flex-wrap: wrap; /* 添加：防止多个按钮导致小屏幕挤压 */
+  flex-wrap: wrap; /* 添加防挤压 */
 }
 
 .nav-btn {
@@ -888,7 +888,7 @@ body.dark-theme .lyrics-container {
   gap: 4px;
 }
 
-/* 合并中英文切换与背书模式按钮样式 */
+/* 合并中英文切换与背书模式按钮样式，保持全端风格严格一致 */
 .toggle-translation-btn,
 .recite-mode-btn {
   display: inline-flex;
@@ -964,7 +964,7 @@ body.recite-mode .lyric-line.active .lyric-translation {
   color: var(--accent-1) !important; 
 }
 
-/* 按钮的激活状态 (作为备用，或者如果你去除了 JS 的内联样式) */
+/* 背书按钮选中激活状态 */
 .recite-mode-btn[aria-pressed="true"],
 .recite-mode-btn.active {
   color: var(--accent-1);
@@ -998,14 +998,11 @@ body.recite-mode .lyric-line.active .lyric-translation {
   border-color: var(--border);
 }
 
-
-
 .lyric-line.active {
   background: var(--accent-3);
   border-color: var(--accent-strong);
   box-shadow: inset 0 0 0 1px var(--accent-strong);
 }
-
 
 @keyframes lyricPulse {
   0% {
@@ -1258,8 +1255,6 @@ body::-webkit-scrollbar-thumb:hover,
     gap: 10px;
   }
 
-
-
   .app-header {
     padding: 14px 18px;
     border-radius: 20px;
@@ -1380,8 +1375,6 @@ body::-webkit-scrollbar-thumb:hover,
   }
 
   .unit-title-group label {
-    /*width: min(100%, 180px);*/
-    /*margin-top: 6px;*/
     max-width: 100%;
   }
 
