@@ -2,7 +2,7 @@
  * Author: Qim (iChochy) & Gemini Collaboration
  * FileName: iReader:main.js
  * Update: 2026/05/06
- * 功能：恢复原作者所有交互细节（触控、精准滚动、错误处理），集成 ASDQ 快捷键与自动暂停。
+ * 功能：全量补全逻辑。修复了课本列表不显示的问题，集成了 ASDQ 快捷键、自动暂停、背诵模式。
  */
 
 const DEFAULT_BOOK_KEY = 'NCE1';
@@ -24,7 +24,7 @@ class ReadingSystem {
       currentLyricIndex: -1,
       currentUnitIndex: -1,
       playMode: 'single',
-      autoPause: false, // 自动暂停开关
+      autoPause: false, // 自动暂停状态
       singlePlayEndTime: null,
       playbackRate: 1.0,
       translationMode: 'show',
@@ -64,7 +64,7 @@ class ReadingSystem {
   }
 
   async init() {
-    this.injectReciteStyles(); // 注入背诵模式样式
+    this.injectReciteStyles(); // 注入背诵模式样式[cite: 1]
     await this.loadBooks();
     await this.applyBookFromHash();
     this.bindEvents();
@@ -72,10 +72,9 @@ class ReadingSystem {
     await this.loadUnitFromStorage();
   }
 
-  // ==== 1. 核心：ASDQ 快捷键与即时高亮逻辑 ====
+  // ==== 1. 快捷键逻辑 (A/S/D/Q) ====
   bindShortcuts() {
     document.addEventListener('keydown', (e) => {
-      // 避免在输入框触发
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return;
 
       const key = e.key.toLowerCase();
@@ -100,14 +99,14 @@ class ReadingSystem {
       const lyric = this.state.currentLyrics[targetIdx];
       this.dom.audioPlayer.currentTime = lyric.time;
       this.dom.audioPlayer.play();
-      this.forceUIHighlight(targetIdx); // 立即视觉反馈
+      this.forceUIHighlight(targetIdx); // 按键瞬间变色
     }
   }
 
   forceUIHighlight(index) {
     this.lyricLineEls.forEach((el, i) => {
       el.classList.toggle('active', i === index);
-      el.classList.toggle('pulse', i === index); // 触发变色动画
+      el.classList.toggle('pulse', i === index);
     });
     this.state.currentLyricIndex = index;
     const activeLine = this.lyricLineEls[index];
@@ -116,7 +115,7 @@ class ReadingSystem {
     }
   }
 
-  // ==== 2. 核心：自动暂停逻辑 (每一秒都在检测) ====
+  // ==== 2. 自动暂停逻辑 ====
   checkAutoPauseLogic() {
     if (!this.state.autoPause || this.dom.audioPlayer.paused) return;
 
@@ -126,22 +125,40 @@ class ReadingSystem {
     const nextLyric = this.state.currentLyrics[currentIndex + 1];
     const endTime = nextLyric ? nextLyric.time : this.dom.audioPlayer.duration;
 
-    // 当播放进度接近下一句开始前 0.1 秒时暂停
     if (this.dom.audioPlayer.currentTime >= endTime - 0.1) {
       this.dom.audioPlayer.pause();
       this.dom.audioPlayer.currentTime = endTime - 0.05; 
     }
   }
 
-  // ==== 3. 恢复原作者复杂的加载与渲染逻辑 ====
+  // ==== 3. 核心修复：课本列表渲染逻辑 ====
+  updateBookSelectsUI() {
+    if (!this.dom.bookSelects.length || !this.state.books.length) return;
+    
+    // 生成所有课本选项的 HTML
+    const options = this.state.books
+      .filter((book) => book && book.key && book.title && book.bookPath)
+      .map((book) => `<option value="${book.key}">${book.title}</option>`)
+      .join('');
+
+    // 将内容注入到所有的 .book-select 下拉框中
+    this.dom.bookSelects.forEach((select) => {
+      select.innerHTML = options;
+      if (this.state.bookKey) {
+        select.value = this.state.bookKey;
+      }
+    });
+  }
+
   async loadBooks() {
     try {
       const response = await fetch('data.json');
       const data = await response.json();
       this.state.books = Array.isArray(data.books) ? data.books : [];
+      this.updateBookSelectsUI(); // 获取数据后立即更新 UI
     } catch (error) {
-      console.error('加载书籍列表失败:', error);
-      this.renderEmptyState('书籍配置加载失败');
+      console.error('加载课本数据失败:', error);
+      this.renderEmptyState('未找到可用课本数据');
     }
   }
 
@@ -153,7 +170,7 @@ class ReadingSystem {
     this.state.bookPath = resolved.bookPath.trim();
     localStorage.setItem(BOOK_SELECTION_STORAGE_KEY, this.state.bookKey);
 
-    this.updateBookSelectsUI();
+    this.updateBookSelectsUI(); // 确保选中项正确[cite: 1, 2]
     await this.loadBookConfig();
     this.renderUnitList();
     this.renderUnitSelect();
@@ -169,12 +186,55 @@ class ReadingSystem {
       this.dom.bookName.textContent = `《${data.bookName}》`;
       this.dom.bookCover.src = `${this.state.bookPath}/${data.bookCover}`;
     } catch (e) {
-      this.renderEmptyState('课件内容加载失败');
+      this.renderEmptyState('课件配置加载失败');
     }
   }
 
-  // ==== 4. 恢复复杂的进度条拖动逻辑 (支持移动端) ====
-  bindProgressBar() {
+  // ==== 4. 事件绑定 (保留原作者细腻交互) ====
+  bindEvents() {
+    this.bindShortcuts();
+    this.bindReciteToggle();
+
+    // 自动暂停按钮
+    if (this.dom.autoPauseBtn) {
+      this.dom.autoPauseBtn.onclick = () => {
+        this.state.autoPause = !this.state.autoPause;
+        this.dom.autoPauseBtn.classList.toggle('active', this.state.autoPause);
+      };
+    }
+
+    this.dom.playPauseBtn.onclick = () => this.dom.audioPlayer.paused ? this.dom.audioPlayer.play() : this.dom.audioPlayer.pause();
+    this.dom.speedBtn.onclick = () => this.cyclePlaybackSpeed();
+    this.dom.playModeBtn.onclick = () => this.togglePlayMode();
+    this.dom.toggleTranslationBtn.onclick = () => this.toggleTranslation();
+
+    this.dom.audioPlayer.ontimeupdate = () => {
+      this.updateAutoHighlight();
+      this.checkAutoPauseLogic();
+      this.updateProgressUI();
+    };
+
+    this.dom.audioPlayer.onplay = () => this.dom.playPauseBtn.classList.add('playing');
+    this.dom.audioPlayer.onpause = () => this.dom.playPauseBtn.classList.remove('playing');
+    this.dom.audioPlayer.onended = () => { if(this.state.playMode === 'continuous') this.jumpSentence(1); };
+
+    // 列表与选择框交互
+    this.dom.unitList.onclick = (e) => {
+      const item = e.target.closest('.unit-item');
+      if (item) this.loadUnitByIndex(parseInt(item.dataset.unitIndex));
+    };
+
+    this.dom.unitSelect.onchange = (e) => this.loadUnitByIndex(parseInt(e.target.value));
+
+    this.dom.bookSelects.forEach(select => {
+      select.onchange = (e) => {
+        location.hash = e.target.value;
+      };
+    });
+
+    window.addEventListener('hashchange', () => this.applyBookFromHash());
+    
+    // 进度条拖动逻辑 (支持移动端捕获)[cite: 1, 2]
     const seek = (clientX) => {
       if (!this.dom.audioPlayer.duration) return;
       const rect = this.dom.progressBar.getBoundingClientRect();
@@ -195,45 +255,10 @@ class ReadingSystem {
     this.dom.progressBar.addEventListener('pointerup', () => this.state.isProgressDragging = false);
   }
 
-  // ==== 5. 整合所有事件绑定 ====
-  bindEvents() {
-    this.bindShortcuts();
-    this.bindProgressBar();
-    this.bindReciteToggle(); // 原有的 Ctrl 逻辑也在内
-
-    // 自动暂停按钮交互
-    if (this.dom.autoPauseBtn) {
-      this.dom.autoPauseBtn.onclick = () => {
-        this.state.autoPause = !this.state.autoPause;
-        this.dom.autoPauseBtn.classList.toggle('active', this.state.autoPause);
-        this.dom.autoPauseBtn.setAttribute('aria-pressed', this.state.autoPause);
-      };
-    }
-
-    this.dom.playPauseBtn.onclick = () => this.dom.audioPlayer.paused ? this.dom.audioPlayer.play() : this.dom.audioPlayer.pause();
-    this.dom.speedBtn.onclick = () => this.cyclePlaybackSpeed();
-    this.dom.playModeBtn.onclick = () => this.togglePlayMode();
-    this.dom.toggleTranslationBtn.onclick = () => this.toggleTranslation();
-
-    this.dom.audioPlayer.ontimeupdate = () => {
-      this.updateAutoHighlight();
-      this.checkAutoPauseLogic();
-      this.updateProgressUI();
-    };
-
-    this.dom.audioPlayer.onplay = () => this.dom.playPauseBtn.classList.add('playing');
-    this.dom.audioPlayer.onpause = () => this.dom.playPauseBtn.classList.remove('playing');
-    this.dom.audioPlayer.onended = () => { if(this.state.playMode === 'continuous') this.jumpSentence(1); };
-
-    this.dom.unitList.onclick = (e) => {
-      const item = e.target.closest('.unit-item');
-      if (item) this.loadUnitByIndex(parseInt(item.dataset.unitIndex));
-    };
-  }
-
-  // ==== 6. 其它功能函数全量补全 ====
+  // ==== 5. 辅助函数补全 ====
   async loadUnitByIndex(idx) {
     this.state.currentUnitIndex = clamp(idx, 0, this.state.units.length - 1);
+    localStorage.setItem(`${this.state.bookPath}/currentUnitIndex`, this.state.currentUnitIndex);
     const unit = this.state.units[this.state.currentUnitIndex];
     const res = await fetch(unit.lrc);
     this.state.currentLyrics = LRCParser.parse(await res.text());
@@ -269,7 +294,6 @@ class ReadingSystem {
     this.dom.progressBar.style.setProperty('--progress', `${p}%`);
   }
 
-  // 背诵模式切换[cite: 1]
   bindReciteToggle() {
     let isCtrlCombination = false;
     document.addEventListener('keydown', (e) => { if (e.key !== 'Control' && e.ctrlKey) isCtrlCombination = true; });
@@ -286,35 +310,25 @@ class ReadingSystem {
     if(this.dom.reciteModeBtn) this.dom.reciteModeBtn.style.color = this.state.reciteMode ? '#ff6b35' : '';
   }
 
-  // 其他 UI 辅助
-  updateBookSelectsUI() { this.dom.bookSelects.forEach(s => s.value = this.state.bookKey); }
-  renderUnitSelect() { this.dom.unitSelect.innerHTML = this.state.units.map((u, i) => `<option value="${i}">${u.title}</option>`).join(''); }
   renderUnitList() { this.dom.unitList.innerHTML = this.state.units.map((u, i) => `<div class="unit-item" data-unit-index="${i}"><h3>${u.title}</h3></div>`).join(''); }
-  renderEmptyState(msg) { this.dom.lyricsDisplay.innerHTML = `<p class="placeholder">${msg}</p>`; }
-  injectReciteStyles() {
-    if (qs('#recite-styles')) return;
-    const s = document.createElement('style'); s.id = 'recite-styles';
-    s.innerHTML = `body.recite-mode .lyric-text { display: none !important; }`;
-    document.head.appendChild(s);
-  }
-  loadPreferences() {
-    this.state.playbackRate = parseFloat(localStorage.getItem('playbackRate')) || 1.0;
-    this.dom.audioPlayer.playbackRate = this.state.playbackRate;
-    this.dom.speedText.textContent = `${this.state.playbackRate}x`;
-  }
+  renderUnitSelect() { this.dom.unitSelect.innerHTML = this.state.units.map((u, i) => `<option value="${i}">${u.title}</option>`).join(''); }
+  updateActiveUnitUI(idx) { qsa('.unit-item', this.dom.unitList).forEach((el, i) => el.classList.toggle('active', i === idx)); this.dom.unitSelect.value = idx; }
+  injectReciteStyles() { if (!qs('#recite-styles')) { const s = document.createElement('style'); s.id = 'recite-styles'; s.innerHTML = `body.recite-mode .lyric-text { display: none !important; }`; document.head.appendChild(s); } }
+  loadPreferences() { this.state.playbackRate = parseFloat(localStorage.getItem('playbackRate')) || 1.0; this.dom.audioPlayer.playbackRate = this.state.playbackRate; this.dom.speedText.textContent = `${this.state.playbackRate}x`; }
   async applyBookFromHash() { await this.applyBookChange(location.hash.slice(1) || DEFAULT_BOOK_KEY); }
   async loadUnitFromStorage() { const idx = parseInt(localStorage.getItem(`${this.state.bookPath}/currentUnitIndex`)) || 0; await this.loadUnitByIndex(idx); }
-  updateActiveUnitUI(idx) { qsa('.unit-item', this.dom.unitList).forEach((el, i) => el.classList.toggle('active', i === idx)); this.dom.unitSelect.value = idx; }
+  renderEmptyState(msg) { this.dom.lyricsDisplay.innerHTML = `<p class="placeholder">${msg}</p>`; }
+  togglePlayMode() { this.state.playMode = this.state.playMode === 'single' ? 'continuous' : 'single'; }
+  toggleTranslation() { const modes = ['show', 'hide', 'blur']; this.state.translationMode = modes[(modes.indexOf(this.state.translationMode) + 1) % modes.length]; document.body.classList.toggle('hide-translation', this.state.translationMode === 'hide'); document.body.classList.toggle('blur-translation', this.state.translationMode === 'blur'); this.dom.toggleTranslationBtn.textContent = {show:'中', hide:'英', blur:'模'}[this.state.translationMode]; }
+  cyclePlaybackSpeed() { const idx = (this.state.availableSpeeds.indexOf(this.state.playbackRate) + 1) % this.state.availableSpeeds.length; this.state.playbackRate = this.state.availableSpeeds[idx]; this.dom.audioPlayer.playbackRate = this.state.playbackRate; this.dom.speedText.textContent = `${this.state.playbackRate}x`; localStorage.setItem('playbackRate', this.state.playbackRate); }
+  checkSinglePlayEnd() { if (this.state.playMode === 'single' && this.state.singlePlayEndTime && this.dom.audioPlayer.currentTime >= this.state.singlePlayEndTime - 0.05) { this.dom.audioPlayer.pause(); this.state.singlePlayEndTime = null; } }
 }
 
-// ==== 7. 全局工具与黑夜模式 ====
+// ==== 6. 全局初始化与黑夜模式 ====
 function initThemeToggle() {
   const btn = qs('#themeToggle');
   if (!btn) return;
-  const setDark = (isDark) => {
-    document.body.classList.toggle('dark-theme', isDark);
-    localStorage.setItem('theme', isDark ? 'dark' : 'light');
-  };
+  const setDark = (isDark) => { document.body.classList.toggle('dark-theme', isDark); localStorage.setItem('theme', isDark ? 'dark' : 'light'); };
   if (localStorage.getItem('theme') === 'dark' || window.matchMedia('(prefers-color-scheme: dark)').matches) setDark(true);
   btn.onclick = () => setDark(!document.body.classList.contains('dark-theme'));
 }
@@ -334,5 +348,10 @@ class LRCParser {
 document.addEventListener('DOMContentLoaded', () => {
   new ReadingSystem();
   initThemeToggle();
-  // 打赏弹窗逻辑略...
+  // 打赏弹窗逻辑
+  const supportBtn = qs('#supportBtn'), modal = qs('#supportModal'), close = qs('#supportCloseBtn');
+  if (supportBtn && modal) {
+    supportBtn.onclick = () => modal.classList.add('open');
+    close.onclick = () => modal.classList.remove('open');
+  }
 });
