@@ -68,7 +68,6 @@ class ReadingSystem {
   }
 
   async init() {
-    this.injectReciteStyles(); 
     await this.loadBooks();
     await this.applyBookFromHash();
     this.bindEvents();
@@ -81,30 +80,7 @@ class ReadingSystem {
     await this.loadUnitFromStorage();
   }
 
-  // ==== 背诵模式核心逻辑 ==== //
-  injectReciteStyles() {
-    if (document.getElementById('recite-mode-styles')) return;
-    const style = document.createElement('style');
-    style.id = 'recite-mode-styles';
-    style.innerHTML = `
-      body.recite-mode .lyric-text {
-        display: none !important; 
-      }
-      body.recite-mode .lyric-translation {
-        display: block !important;
-        font-size: 1.15em !important; 
-        color: inherit !important;
-        filter: none !important; 
-        opacity: 1 !important;   
-        font-weight: 600;
-        padding: 4px 0;
-      }
-      body.recite-mode .lyric-line.active .lyric-translation {
-        color: #ff6b35 !important; 
-      }
-    `;
-    document.head.appendChild(style);
-  }
+  // ================= 背诵模式 & 快捷键核心逻辑 ================= //
 
   loadRecitePreference() {
     const storedMode = localStorage.getItem('reciteMode');
@@ -117,93 +93,89 @@ class ReadingSystem {
     document.body.classList.toggle('recite-mode', this.state.reciteMode);
     
     if (this.state.reciteMode) {
-      this.dom.reciteModeBtn.style.color = '#ff6b35';
-      this.dom.reciteModeBtn.style.borderColor = '#ff6b35';
-      this.dom.reciteModeBtn.style.backgroundColor = 'rgba(255, 107, 53, 0.1)';
       this.dom.reciteModeBtn.setAttribute('aria-pressed', 'true');
+      this.dom.reciteModeBtn.classList.add('active');
     } else {
-      this.dom.reciteModeBtn.style.color = '';
-      this.dom.reciteModeBtn.style.borderColor = '';
-      this.dom.reciteModeBtn.style.backgroundColor = '';
       this.dom.reciteModeBtn.setAttribute('aria-pressed', 'false');
+      this.dom.reciteModeBtn.classList.remove('active');
     }
   }
 
-  // 提取出的独立切换方法
   toggleReciteMode() {
     this.state.reciteMode = !this.state.reciteMode;
     localStorage.setItem('reciteMode', this.state.reciteMode);
     this.updateReciteUI();
   }
 
-  bindReciteToggle() {
-    if (!this.dom.reciteModeBtn) return;
+  // 关键：为了让快捷键能瞬间变色，抛弃 timeupdate 的延迟，直接主动触发跳转和 UI 更新
+  jumpToLyricImmediate(targetIndex) {
+    if (!this.state.currentLyrics || !this.state.currentLyrics.length) return;
     
-    // 1. 鼠标点击控制
-    this.dom.reciteModeBtn.addEventListener('click', () => {
-      this.toggleReciteMode();
-    });
+    // 确保索引不越界
+    targetIndex = clamp(targetIndex, 0, this.state.currentLyrics.length - 1);
+    
+    const targetLyric = this.state.currentLyrics[targetIndex];
+    if (!targetLyric) return;
 
-    // 2. 键盘 Ctrl 键与 A/S/D 快捷键控制
+    // 1. 设置音频时间并播放
+    this.playLyricAtIndex(targetIndex, targetLyric.time);
+    this.persistPlayTime(targetLyric.time);
+    
+    // 2. 强制主动更新高亮，不要等 timeupdate (做到和鼠标点击一样瞬间变色)
+    this.updateLyricHighlight();
+  }
+
+  bindGlobalShortcuts() {
+    if (this.dom.reciteModeBtn) {
+      // 鼠标点击背书按钮
+      this.dom.reciteModeBtn.addEventListener('click', () => {
+        this.toggleReciteMode();
+      });
+    }
+
     let isCtrlCombination = false;
 
+    // 键盘按下事件监听
     document.addEventListener('keydown', (event) => {
-      // 防止在可能存在的输入框中触发快捷键
-      if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') return;
+      // 防误触：在输入框内不触发快捷键
+      const targetTag = event.target.tagName.toLowerCase();
+      if (targetTag === 'input' || targetTag === 'textarea' || targetTag === 'select') return;
 
-      // 如果按下了 Ctrl，同时又按下了其他键，则标记为组合键
       if (event.key !== 'Control' && event.ctrlKey) {
         isCtrlCombination = true;
       }
 
-      // 如果处于背诵模式，监听 A, S, D
-      if (this.state.reciteMode) {
-        const key = event.key.toLowerCase();
+      const key = event.key.toLowerCase();
+      // 全局快捷键 A(上一句), S(重复), D(下一句)
+      if (['a', 's', 'd'].includes(key)) {
+        event.preventDefault(); // 阻止浏览器默认行为
         
-        if (['a', 's', 'd'].includes(key)) {
-          event.preventDefault(); // 阻止浏览器默认行为
-          
-          if (!this.state.currentLyrics.length) return;
+        let currentIndex = this.state.currentLyricIndex;
+        // 如果还没有开始播放，默认从第0句开始
+        if (currentIndex === -1) currentIndex = 0;
 
-          // 获取当前索引，如果没开始则默认从0开始
-          let currentIndex = this.state.currentLyricIndex;
-          if (currentIndex === -1) currentIndex = 0;
-
-          let targetIndex = currentIndex;
-
-          if (key === 'a') {
-            // 上一句
-            targetIndex = Math.max(0, currentIndex - 1);
-          } else if (key === 's') {
-            // 重复当前句
-            targetIndex = currentIndex;
-          } else if (key === 'd') {
-            // 下一句
-            targetIndex = Math.min(this.state.currentLyrics.length - 1, currentIndex + 1);
-          }
-
-          // 跳转并播放
-          if (this.state.currentLyrics[targetIndex]) {
-            const time = this.state.currentLyrics[targetIndex].time;
-            this.playLyricAtIndex(targetIndex, time);
-            this.persistPlayTime(time);
-          }
+        if (key === 'a') {
+          this.jumpToLyricImmediate(currentIndex - 1);
+        } else if (key === 's') {
+          this.jumpToLyricImmediate(currentIndex);
+        } else if (key === 'd') {
+          this.jumpToLyricImmediate(currentIndex + 1);
         }
       }
     });
 
+    // 键盘松开事件监听（专用于 Ctrl 键切换）
     document.addEventListener('keyup', (event) => {
       if (event.key === 'Control') {
-        // 只有当没有使用组合键时，松开 Ctrl 才会触发背诵模式切换
         if (!isCtrlCombination) {
           this.toggleReciteMode();
         }
-        // 重置组合键状态
         isCtrlCombination = false;
       }
     });
   }
-  // ==== 背诵模式逻辑结束 ==== //
+
+  // ========================================================= //
 
   async loadBooks() {
     if (this.state.books.length) return this.state.books;
@@ -483,6 +455,9 @@ class ReadingSystem {
     const time = parseFloat(line.dataset.time);
     this.playLyricAtIndex(index, time);
     this.persistPlayTime(time);
+    
+    // 主动更新高亮
+    this.updateLyricHighlight();
   }
 
   playLyricAtIndex(index, time) {
@@ -686,6 +661,7 @@ class ReadingSystem {
 
     const currentTime = this.dom.audioPlayer.currentTime;
     let newIndex = -1;
+    // 反向遍历找到当前播放时间对应的歌词
     for (let i = this.state.currentLyrics.length - 1; i >= 0; i--) {
       if (currentTime >= this.state.currentLyrics[i].time) {
         newIndex = i;
@@ -695,6 +671,7 @@ class ReadingSystem {
 
     if (newIndex === this.state.currentLyricIndex) return;
 
+    // 移除旧的高亮
     if (this.state.currentLyricIndex >= 0 && this.lyricLineEls[this.state.currentLyricIndex]) {
       this.lyricLineEls[this.state.currentLyricIndex].classList.remove('active');
       this.lyricLineEls[this.state.currentLyricIndex].classList.remove('pulse');
@@ -702,6 +679,7 @@ class ReadingSystem {
 
     this.state.currentLyricIndex = newIndex;
 
+    // 添加新的高亮并滚动
     if (newIndex >= 0) {
       const activeLine = this.lyricLineEls[newIndex];
       if (activeLine) {
@@ -750,7 +728,7 @@ class ReadingSystem {
     this.bindPlayerControls();
     this.bindNavigation();
     this.bindTranslationToggle();
-    this.bindReciteToggle(); 
+    this.bindGlobalShortcuts(); // 绑定全局快捷键 A/S/D 和 Ctrl
 
     window.addEventListener('hashchange', () => {
       const newKey = location.hash.slice(1).trim() || DEFAULT_BOOK_KEY;
