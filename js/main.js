@@ -24,14 +24,22 @@ class ReadingSystem {
       currentLyricIndex: -1,
       currentUnitIndex: -1,
       playMode: 'single',
-      singlePlayEndTime: null,
       playbackRate: 1.0,
       translationMode: 'show',
       reciteMode: false,
       availableSpeeds: [0.5, 0.75, 1.0, 1.25, 1.5, 2.0],
       savedPlayTime: 0,
-      isProgressDragging: false
+      isProgressDragging: false,
+      
+      // 新增：播放循环控制状态
+      currentLyricEndTime: null, 
+      maxRepeatCount: 1,         // 默认播放1遍
+      currentRepeatCount: 1,     // 当前正在播放第几遍
+      repeatOptionIndex: 0       // 循环选项索引
     };
+
+    // 支持的循环次数配置
+    this.repeatOptions = [1, 2, 3, 5, Infinity];
 
     this.dom = {
       audioPlayer: qs('#audioPlayer'),
@@ -80,7 +88,7 @@ class ReadingSystem {
     await this.loadUnitFromStorage();
   }
 
-  // ================= 背诵模式 & 快捷键核心逻辑 ================= //
+  // ================= 播放几遍 (Q) & 快捷键核心逻辑 ================= //
 
   loadRecitePreference() {
     const storedMode = localStorage.getItem('reciteMode');
@@ -107,27 +115,67 @@ class ReadingSystem {
     this.updateReciteUI();
   }
 
-  // 关键：为了让快捷键能瞬间变色，抛弃 timeupdate 的延迟，直接主动触发跳转和 UI 更新
+  // 创建优雅的屏幕提示框
+  showToast(message) {
+    let toast = document.getElementById('q-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'q-toast';
+      toast.style.cssText = `
+        position: fixed;
+        top: 15%;
+        left: 50%;
+        transform: translate(-50%, -20px);
+        background: var(--glass-strong);
+        color: var(--accent-1);
+        border: 1px solid var(--accent-strong);
+        box-shadow: var(--shadow-md);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        padding: 10px 24px;
+        border-radius: 99px;
+        font-size: 15px;
+        font-weight: 600;
+        z-index: 10000;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.3s ease, transform 0.3s ease;
+        font-family: var(--font-sans);
+      `;
+      document.body.appendChild(toast);
+    }
+    
+    toast.style.opacity = '0';
+    toast.style.transform = 'translate(-50%, -20px)';
+    
+    setTimeout(() => {
+        toast.textContent = message;
+        toast.style.opacity = '1';
+        toast.style.transform = 'translate(-50%, 0)';
+    }, 20);
+
+    if (this.toastTimeout) clearTimeout(this.toastTimeout);
+    this.toastTimeout = setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transform = 'translate(-50%, -20px)';
+    }, 2000);
+  }
+
+  // 抛弃 timeupdate 延迟，主动触发瞬间跳转与 UI 变色
   jumpToLyricImmediate(targetIndex) {
     if (!this.state.currentLyrics || !this.state.currentLyrics.length) return;
-    
-    // 确保索引不越界
     targetIndex = clamp(targetIndex, 0, this.state.currentLyrics.length - 1);
     
     const targetLyric = this.state.currentLyrics[targetIndex];
     if (!targetLyric) return;
 
-    // 1. 设置音频时间并播放
     this.playLyricAtIndex(targetIndex, targetLyric.time);
     this.persistPlayTime(targetLyric.time);
-    
-    // 2. 强制主动更新高亮，不要等 timeupdate (做到和鼠标点击一样瞬间变色)
     this.updateLyricHighlight();
   }
 
   bindGlobalShortcuts() {
     if (this.dom.reciteModeBtn) {
-      // 鼠标点击背书按钮
       this.dom.reciteModeBtn.addEventListener('click', () => {
         this.toggleReciteMode();
       });
@@ -135,9 +183,7 @@ class ReadingSystem {
 
     let isCtrlCombination = false;
 
-    // 键盘按下事件监听
     document.addEventListener('keydown', (event) => {
-      // 防误触：在输入框内不触发快捷键
       const targetTag = event.target.tagName.toLowerCase();
       if (targetTag === 'input' || targetTag === 'textarea' || targetTag === 'select') return;
 
@@ -146,12 +192,27 @@ class ReadingSystem {
       }
 
       const key = event.key.toLowerCase();
-      // 全局快捷键 A(上一句), S(重复), D(下一句)
+      
+      // Q键：切换循环播放次数
+      if (key === 'q') {
+        event.preventDefault();
+        this.state.repeatOptionIndex = (this.state.repeatOptionIndex + 1) % this.repeatOptions.length;
+        this.state.maxRepeatCount = this.repeatOptions[this.state.repeatOptionIndex];
+        this.state.currentRepeatCount = 1; // 切换时重置计数
+
+        let msg = `当前句播放: ${this.state.maxRepeatCount}遍`;
+        if (this.state.maxRepeatCount === Infinity) msg = '当前句播放: 无限循环';
+        if (this.state.maxRepeatCount === 1) msg = '当前句播放: 1遍 (默认)';
+
+        this.showToast(msg);
+        return;
+      }
+
+      // A, S, D 快捷键控制
       if (['a', 's', 'd'].includes(key)) {
-        event.preventDefault(); // 阻止浏览器默认行为
+        event.preventDefault(); 
         
         let currentIndex = this.state.currentLyricIndex;
-        // 如果还没有开始播放，默认从第0句开始
         if (currentIndex === -1) currentIndex = 0;
 
         if (key === 'a') {
@@ -164,7 +225,6 @@ class ReadingSystem {
       }
     });
 
-    // 键盘松开事件监听（专用于 Ctrl 键切换）
     document.addEventListener('keyup', (event) => {
       if (event.key === 'Control') {
         if (!isCtrlCombination) {
@@ -395,7 +455,8 @@ class ReadingSystem {
 
     this.updatePlayButton();
     this.state.currentLyricIndex = -1;
-    this.state.singlePlayEndTime = null;
+    this.state.currentLyricEndTime = null;
+    this.state.currentRepeatCount = 1;
   }
 
   updateActiveUnit(unitIndex, options = {}) {
@@ -455,22 +516,20 @@ class ReadingSystem {
     const time = parseFloat(line.dataset.time);
     this.playLyricAtIndex(index, time);
     this.persistPlayTime(time);
-    
-    // 主动更新高亮
     this.updateLyricHighlight();
   }
 
+  // 高度结合“重复次数”的全新播放逻辑
   playLyricAtIndex(index, time) {
     if (!this.dom.audioPlayer) return;
-
     this.dom.audioPlayer.currentTime = time;
-
-    if (this.state.playMode === 'single') {
-      const nextLyric = this.state.currentLyrics[index + 1];
-      this.state.singlePlayEndTime = nextLyric ? nextLyric.time : this.dom.audioPlayer.duration;
-    } else {
-      this.state.singlePlayEndTime = null;
-    }
+    
+    // 提前计算当前句的结束时间，供 checkLyricBoundary 拦截
+    const nextLyric = this.state.currentLyrics[index + 1];
+    this.state.currentLyricEndTime = nextLyric ? nextLyric.time : this.dom.audioPlayer.duration;
+    
+    this.state.currentLyricIndex = index;
+    this.state.currentRepeatCount = 1; // 手动切句重置播放次数
 
     this.dom.audioPlayer.play();
   }
@@ -479,16 +538,36 @@ class ReadingSystem {
     localStorage.setItem(`${this.state.bookPath}/${this.state.currentUnitIndex}/playTime`, time);
   }
 
-  checkSinglePlayEnd() {
-    if (this.state.playMode !== 'single' || this.state.singlePlayEndTime === null || !this.dom.audioPlayer) {
-      return;
-    }
+  // 代替之前的 checkSinglePlayEnd，提供精准的边界拦截与循环控制
+  checkLyricBoundary() {
+    if (!this.dom.audioPlayer || this.state.isProgressDragging) return;
+
+    // 只有在 单句模式 或 设置了循环遍数(>1) 时才需要主动拦截边界
+    const enforceBoundary = this.state.playMode === 'single' || this.state.maxRepeatCount > 1;
+    if (!enforceBoundary) return;
 
     const currentTime = this.dom.audioPlayer.currentTime;
-    if (currentTime >= this.state.singlePlayEndTime && this.state.singlePlayEndTime !== this.dom.audioPlayer.duration) {
-      this.dom.audioPlayer.pause();
-      this.dom.audioPlayer.currentTime = this.state.singlePlayEndTime - 0.01;
-      this.state.singlePlayEndTime = null;
+    const endTime = this.state.currentLyricEndTime;
+
+    // 判断是否越界 (安全误差在0.8s内防止用户大跨度拖拽进度条误触)
+    if (endTime && currentTime >= endTime && (currentTime - endTime < 0.8) && endTime !== this.dom.audioPlayer.duration) {
+      if (this.state.currentRepeatCount < this.state.maxRepeatCount) {
+        // === 执行重复播放 ===
+        this.state.currentRepeatCount++;
+        const startTime = this.state.currentLyrics[this.state.currentLyricIndex].time;
+        this.dom.audioPlayer.currentTime = startTime;
+        this.dom.audioPlayer.play();
+      } else {
+        // === 循环次数用尽 ===
+        this.state.currentRepeatCount = 1; 
+        if (this.state.playMode === 'single') {
+          this.dom.audioPlayer.pause();
+          this.dom.audioPlayer.currentTime = endTime - 0.01;
+        } else if (this.state.playMode === 'continuous') {
+          // 连续模式下，直接自然步入下一句
+          this.playNextLyric();
+        }
+      }
     }
   }
 
@@ -642,6 +721,16 @@ class ReadingSystem {
   }
 
   handleAudioEnded() {
+    // 即使是全篇最后一句，也要遵守循环播放规则
+    if (this.state.currentRepeatCount < this.state.maxRepeatCount) {
+      this.state.currentRepeatCount++;
+      const startTime = this.state.currentLyrics[this.state.currentLyricIndex]?.time || 0;
+      this.dom.audioPlayer.currentTime = startTime;
+      this.dom.audioPlayer.play();
+      return;
+    }
+
+    this.state.currentRepeatCount = 1;
     if (this.state.playMode === 'continuous') {
       this.playNextLyric();
     }
@@ -651,8 +740,7 @@ class ReadingSystem {
     const nextIndex = this.state.currentLyricIndex + 1;
     if (nextIndex < this.state.currentLyrics.length && this.dom.audioPlayer) {
       const nextLyric = this.state.currentLyrics[nextIndex];
-      this.dom.audioPlayer.currentTime = nextLyric.time;
-      this.dom.audioPlayer.play();
+      this.playLyricAtIndex(nextIndex, nextLyric.time);
     }
   }
 
@@ -661,7 +749,6 @@ class ReadingSystem {
 
     const currentTime = this.dom.audioPlayer.currentTime;
     let newIndex = -1;
-    // 反向遍历找到当前播放时间对应的歌词
     for (let i = this.state.currentLyrics.length - 1; i >= 0; i--) {
       if (currentTime >= this.state.currentLyrics[i].time) {
         newIndex = i;
@@ -671,7 +758,6 @@ class ReadingSystem {
 
     if (newIndex === this.state.currentLyricIndex) return;
 
-    // 移除旧的高亮
     if (this.state.currentLyricIndex >= 0 && this.lyricLineEls[this.state.currentLyricIndex]) {
       this.lyricLineEls[this.state.currentLyricIndex].classList.remove('active');
       this.lyricLineEls[this.state.currentLyricIndex].classList.remove('pulse');
@@ -679,8 +765,12 @@ class ReadingSystem {
 
     this.state.currentLyricIndex = newIndex;
 
-    // 添加新的高亮并滚动
+    // 当歌词自然跨越或跳转更新时，更新 endTime 基准并重置新句子的循环次数
     if (newIndex >= 0) {
+      const nextLyric = this.state.currentLyrics[newIndex + 1];
+      this.state.currentLyricEndTime = nextLyric ? nextLyric.time : this.dom.audioPlayer.duration;
+      this.state.currentRepeatCount = 1; 
+
       const activeLine = this.lyricLineEls[newIndex];
       if (activeLine) {
         activeLine.classList.add('active');
@@ -728,7 +818,7 @@ class ReadingSystem {
     this.bindPlayerControls();
     this.bindNavigation();
     this.bindTranslationToggle();
-    this.bindGlobalShortcuts(); // 绑定全局快捷键 A/S/D 和 Ctrl
+    this.bindGlobalShortcuts(); 
 
     window.addEventListener('hashchange', () => {
       const newKey = location.hash.slice(1).trim() || DEFAULT_BOOK_KEY;
@@ -910,7 +1000,8 @@ class ReadingSystem {
     });
 
     this.dom.audioPlayer.addEventListener('timeupdate', () => {
-      this.checkSinglePlayEnd();
+      // 必须先检查边界，再更新歌词高亮上下文，逻辑才严密
+      this.checkLyricBoundary();
       this.updateLyricHighlight();
       this.updateProgress();
     });
@@ -937,7 +1028,6 @@ class ReadingSystem {
     });
 
     this.dom.audioPlayer.addEventListener('pause', () => {
-      this.state.singlePlayEndTime = null;
       this.updatePlayButton();
     });
 
